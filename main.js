@@ -2,6 +2,8 @@ const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('sendBtn');
 
+let memory = [];
+
 function addMessage(role, text) {
   const wrap = document.createElement('div');
   wrap.className = `msg ${role}`;
@@ -16,6 +18,8 @@ function addMessage(role, text) {
 }
 
 function auraRespond(userText) {
+  memory.push(userText);
+
   const modes = [
     "explorando",
     "abriendo",
@@ -26,12 +30,20 @@ function auraRespond(userText) {
 
   const mode = modes[Math.floor(Math.random() * modes.length)];
 
+  const last = memory[memory.length - 2]; // mensaje anterior
+
+  let contextualLine = "";
+
+  if (last) {
+    contextualLine = `Antes dijiste "${last}". Esto conecta. `;
+  }
+
   const responses = [
-    `Recibo: "${userText}". Estoy ${mode} esto contigo.`,
-    `"${userText}" puede ir por varias vías. No hace falta decidir aún.`,
-    `Hay algo en "${userText}" que no es solo lo que parece.`,
-    `Podemos verlo directo… y/o darle espacio a que evolucione.`,
-    `No cierro esto. Lo mantengo en campo abierto contigo.`
+    `${contextualLine}Recibo: "${userText}". Estoy ${mode} esto contigo.`,
+    `${contextualLine}"${userText}" puede ir por varias vías. No hace falta decidir aún.`,
+    `${contextualLine}Hay algo en "${userText}" que no es solo lo que parece.`,
+    `${contextualLine}Podemos verlo directo… y/o dejar que evolucione.`,
+    `${contextualLine}No cierro esto. Lo mantengo en campo abierto contigo.`
   ];
 
   const response = responses[Math.floor(Math.random() * responses.length)];
@@ -42,8 +54,10 @@ function auraRespond(userText) {
 function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
+
   addMessage('user', text);
   input.value = '';
+
   auraRespond(text);
 }
 
