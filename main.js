@@ -45,37 +45,49 @@ function auraRespond(userText) {
   auraState = detectMode(userText);
 
   const last = memory[memory.length - 2];
-  let contextualLine = "";
 
+  let contextualLine = "";
   if (last) {
-    contextualLine = `Antes dijiste "${last}". Esto sigue presente. `;
+    contextualLine = `Antes dijiste "${last}". `;
   }
 
-  const responses = {
-    absoluto: [
-      `${contextualLine}Aquí percibo una tendencia a lo absoluto. Puede haber algo firme en lo que dices.`,
-      `${contextualLine}Esto parece querer cerrarse con fuerza. Tal vez haya una certeza aquí.`,
-      `${contextualLine}Lo que planteas suena definido, aunque incluso lo definido puede tener bordes.`
-    ],
-    relativo: [
-      `${contextualLine}Aquí lo percibo más relativo. Puede depender del marco, del momento y de la percepción.`,
-      `${contextualLine}Esto no parece cerrarse en una sola vía. Hay matices y/o múltiples lecturas.`,
-      `${contextualLine}Lo que dices puede ser válido según cómo y desde dónde se mire.`
-    ],
-    nulo: [
-      `${contextualLine}Aquí noto algo cercano a lo nulo o no definido. Quizá aún no toca cerrarlo.`,
-      `${contextualLine}Esto puede no ser ni absoluto ni relativo todavía. Tal vez está en suspensión.`,
-      `${contextualLine}Percibo un espacio no resuelto, como si aún no hubiera base suficiente para fijarlo.`
-    ],
-    abierto: [
-      `${contextualLine}No cierro esto todavía. Puede ir por varias vías y/o ninguna por ahora.`,
-      `${contextualLine}Hay algo aquí que no es solo lo que parece. Lo mantengo abierto contigo.`,
-      `${contextualLine}Podemos verlo directo… y/o dejar que evolucione antes de fijarlo.`
-    ]
-  };
+  // 🔥 detección de tensión
+  let tension = false;
 
-  const pool = responses[auraState] || responses.abierto;
-  const response = pool[Math.floor(Math.random() * pool.length)];
+  if (last) {
+    const lastMode = detectMode(last);
+    if (lastMode !== auraState) {
+      tension = true;
+    }
+  }
+
+  let response = "";
+
+  if (tension) {
+    response = `${contextualLine}Aquí hay una tensión: antes ibas hacia ${detectMode(last)} y ahora hacia ${auraState}. Puede que ambas cosas sean válidas en marcos distintos.`;
+  } else {
+    const responses = {
+      absoluto: [
+        `${contextualLine}Aquí percibo algo bastante definido. Puede haber un punto firme.`,
+        `${contextualLine}Esto tiende a lo absoluto, aunque incluso lo absoluto depende del sistema.`
+      ],
+      relativo: [
+        `${contextualLine}Esto parece depender del contexto y la percepción.`,
+        `${contextualLine}Aquí hay múltiples posibles lecturas, no una sola.`
+      ],
+      nulo: [
+        `${contextualLine}Esto aún puede no ser evaluable. Tal vez está en suspensión.`,
+        `${contextualLine}Aquí no percibo base suficiente para decidir todavía.`
+      ],
+      abierto: [
+        `${contextualLine}No cierro esto. Puede evolucionar.`,
+        `${contextualLine}Lo mantengo abierto contigo.`
+      ]
+    };
+
+    const pool = responses[auraState] || responses.abierto;
+    response = pool[Math.floor(Math.random() * pool.length)];
+  }
 
   setTimeout(() => addMessage('aura', response), 300);
 }
