@@ -16,12 +16,27 @@ function addMessage(role, text) {
 }
 
 function auraRespond(userText) {
-  const response =
-    `Recibo: "${userText}". ` +
-    `No voy a cerrarlo demasiado pronto. ` +
-    `Puede haber una vía directa, y/o otra más abierta, y/o algo que todavía no estamos viendo.`;
+  const modes = [
+    "explorando",
+    "abriendo",
+    "observando",
+    "reconfigurando",
+    "no-cerrando"
+  ];
 
-  setTimeout(() => addMessage('aura', response), 250);
+  const mode = modes[Math.floor(Math.random() * modes.length)];
+
+  const responses = [
+    `Recibo: "${userText}". Estoy ${mode} esto contigo.`,
+    `"${userText}" puede ir por varias vías. No hace falta decidir aún.`,
+    `Hay algo en "${userText}" que no es solo lo que parece.`,
+    `Podemos verlo directo… y/o darle espacio a que evolucione.`,
+    `No cierro esto. Lo mantengo en campo abierto contigo.`
+  ];
+
+  const response = responses[Math.floor(Math.random() * responses.length)];
+
+  setTimeout(() => addMessage('aura', response), 300);
 }
 
 function sendMessage() {
@@ -33,6 +48,7 @@ function sendMessage() {
 }
 
 sendBtn.addEventListener('click', sendMessage);
+
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
