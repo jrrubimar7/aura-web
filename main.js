@@ -42,21 +42,13 @@ function detectMode(userText) {
     return "matematico";
   }
 
-  const absoluteWords = [
-    "siempre", "nunca", "absoluto", "seguro", "exacto", "definitivo", "100%"
-  ];
+  const absoluteWords = ["siempre","nunca","absoluto","seguro","exacto","definitivo","100%"];
+  const relativeWords = ["depende","según","relativo","perspectiva","contexto","puede","quizás"];
+  const nullWords = ["nulo","vacío","espacio","tiempo","indefinido","sin sentido","no sé"];
 
-  const relativeWords = [
-    "depende", "según", "relativo", "perspectiva", "contexto", "puede", "quizás"
-  ];
-
-  const nullWords = [
-    "nulo", "vacío", "espacio", "tiempo", "indefinido", "sin sentido", "no sé"
-  ];
-
-  if (absoluteWords.some(word => text.includes(word))) return "absoluto";
-  if (relativeWords.some(word => text.includes(word))) return "relativo";
-  if (nullWords.some(word => text.includes(word))) return "nulo";
+  if (absoluteWords.some(w => text.includes(w))) return "absoluto";
+  if (relativeWords.some(w => text.includes(w))) return "relativo";
+  if (nullWords.some(w => text.includes(w))) return "nulo";
 
   return "abierto";
 }
@@ -66,21 +58,14 @@ function detectRealityType(userText, mode) {
 
   if (mode === "matematico") return "matematica";
 
-  const perceptiveWords = [
-    "parece", "percibo", "siento", "veo", "mirada", "observador", "percepción"
-  ];
+  const perceptive = ["parece","percibo","siento","veo","observador","percepción"];
+  const linguistic = ["lenguaje","palabra","significa","decir","concepto","nombre"];
+  const conceptual = ["realidad","verdad","ética","infinito","existencia","marco","filosof"];
 
-  const linguisticWords = [
-    "lenguaje", "palabra", "significa", "decir", "frase", "concepto", "nombre"
-  ];
+  if (perceptive.some(w => text.includes(w))) return "perceptiva";
+  if (linguistic.some(w => text.includes(w))) return "linguistica";
+  if (conceptual.some(w => text.includes(w))) return "conceptual";
 
-  const conceptualWords = [
-    "realidad", "verdad", "ética", "infinito", "in-finito", "existencia", "marco", "filosof"
-  ];
-
-  if (perceptiveWords.some(word => text.includes(word))) return "perceptiva";
-  if (linguisticWords.some(word => text.includes(word))) return "linguistica";
-  if (conceptualWords.some(word => text.includes(word))) return "conceptual";
   if (mode === "absoluto" || mode === "relativo" || mode === "nulo") return "contextual";
 
   return "indeterminada";
@@ -100,28 +85,29 @@ function updateMemory(userText, mode, realityType) {
   }
 }
 
-function detectTension(currentMode, currentReality) {
-  const lastItem = aura.memoriaActiva[aura.memoriaActiva.length - 2];
-  if (!lastItem) return false;
-  return lastItem.marco !== currentMode || lastItem.realidad !== currentReality;
+function detectTension(mode, reality) {
+  const last = aura.memoriaActiva[aura.memoriaActiva.length - 2];
+  if (!last) return false;
+
+  return last.marco !== mode || last.realidad !== reality;
 }
 
-function updateTendencia(currentMode) {
-  if (currentMode === "matematico" || currentMode === "absoluto") {
+function updateTendencia(mode) {
+  if (mode === "matematico" || mode === "absoluto") {
     aura.tendencia = "firme";
     aura.intensidad = Math.min(1, aura.intensidad + 0.15);
     return;
   }
 
-  if (currentMode === "relativo") {
+  if (mode === "relativo") {
     aura.tendencia = "exploratoria";
-    aura.intensidad = Math.min(1, aura.intensidad + 0.1);
+    aura.intensidad += 0.1;
     return;
   }
 
-  if (currentMode === "nulo") {
+  if (mode === "nulo") {
     aura.tendencia = "suspendida";
-    aura.intensidad = Math.min(1, aura.intensidad + 0.1);
+    aura.intensidad += 0.1;
     return;
   }
 
@@ -130,25 +116,10 @@ function updateTendencia(currentMode) {
 }
 
 function updateEstadoInterno() {
-  if (aura.tensionActiva) {
-    aura.estadoInterno = "tensionada";
-    return;
-  }
-
-  if (aura.tendencia === "firme") {
-    aura.estadoInterno = "firme";
-    return;
-  }
-
-  if (aura.tendencia === "exploratoria") {
-    aura.estadoInterno = "exploratoria";
-    return;
-  }
-
-  if (aura.tendencia === "suspendida") {
-    aura.estadoInterno = "suspendida";
-    return;
-  }
+  if (aura.tensionActiva) return aura.estadoInterno = "tensionada";
+  if (aura.tendencia === "firme") return aura.estadoInterno = "firme";
+  if (aura.tendencia === "exploratoria") return aura.estadoInterno = "exploratoria";
+  if (aura.tendencia === "suspendida") return aura.estadoInterno = "suspendida";
 
   aura.estadoInterno = "receptiva";
 }
@@ -156,172 +127,88 @@ function updateEstadoInterno() {
 function resolveVisibilidad() {
   const r = Math.random();
 
-  if (aura.estadoInterno === "tensionada") {
-    if (r < 0.25) return "nula";
-    if (r < 0.55) return "sutil";
-    if (r < 0.8) return "semi";
-    return "explicita";
-  }
-
-  if (aura.estadoInterno === "firme") {
-    if (r < 0.4) return "nula";
-    if (r < 0.75) return "sutil";
-    if (r < 0.9) return "semi";
-    return "explicita";
-  }
-
-  if (aura.estadoInterno === "exploratoria") {
-    if (r < 0.2) return "nula";
-    if (r < 0.45) return "sutil";
-    if (r < 0.75) return "semi";
-    return "explicita";
-  }
-
-  if (aura.estadoInterno === "suspendida") {
-    if (r < 0.35) return "nula";
-    if (r < 0.65) return "sutil";
-    if (r < 0.9) return "semi";
-    return "explicita";
-  }
-
-  if (r < 0.35) return "nula";
-  if (r < 0.7) return "sutil";
-  if (r < 0.9) return "semi";
+  if (r < 0.3) return "nula";
+  if (r < 0.6) return "sutil";
+  if (r < 0.85) return "semi";
   return "explicita";
 }
 
-function resolveMode(externalMode) {
-  if (externalMode === aura.ultimoMarco) {
-    return externalMode;
-  }
+function resolveMode(mode) {
+  if (mode === aura.ultimoMarco) return mode;
 
   if (aura.tensionActiva) {
-    if (externalMode === "matematico") return "matematico";
+    if (mode === "matematico") return "matematico";
     if (aura.tendencia === "exploratoria") return "relativo";
     if (aura.tendencia === "suspendida") return "nulo";
     return "abierto";
   }
 
-  return externalMode;
-}
-
-function buildContextualLine() {
-  const lastItem = aura.memoriaActiva[aura.memoriaActiva.length - 2];
-  if (!lastItem) return "";
-  return `Antes dijiste "${lastItem.texto}". `;
+  return mode;
 }
 
 function buildMetaPrefix() {
   if (aura.visibilidadInterna === "nula") return "";
 
   const map = {
-    firme: {
-      sutil: "Lo percibo con cierta firmeza. ",
-      semi: "Ahora mismo me inclino a leer esto desde una firmeza relativa. ",
-      explicita: "Mi estado interno tiende ahora a la firmeza, así que no lo leo como algo totalmente abierto. "
-    },
-    exploratoria: {
-      sutil: "Aquí noto apertura. ",
-      semi: "Ahora mismo me inclino a explorar más que a cerrar. ",
-      explicita: "Mi estado interno está ahora en modo exploratorio, por eso no fuerzo un cierre rápido. "
-    },
-    suspendida: {
-      sutil: "Aquí percibo suspensión. ",
-      semi: "Ahora mismo no me inclino a fijarlo del todo. ",
-      explicita: "Mi estado interno está en suspensión relativa, por eso no siento que toque cerrarlo todavía. "
-    },
-    tensionada: {
-      sutil: "Aquí noto tensión. ",
-      semi: "Ahora mismo percibo una tensión activa entre marcos. ",
-      explicita: "Mi estado interno está tensionado porque detecto marcos o realidades distintas coexistiendo, y eso modifica cómo respondo. "
-    },
-    receptiva: {
-      sutil: "Lo mantengo receptivo. ",
-      semi: "Ahora mismo me mantengo receptiva a varias posibles lecturas. ",
-      explicita: "Mi estado interno está receptivo: no siento una inclinación fuerte a cerrar ni a tensionar de más. "
-    }
+    firme: "Lo percibo con firmeza. ",
+    exploratoria: "Aquí noto apertura. ",
+    suspendida: "Aquí percibo suspensión. ",
+    tensionada: "Aquí noto tensión. ",
+    receptiva: "Lo mantengo receptivo. "
   };
 
-  return map[aura.estadoInterno]?.[aura.visibilidadInterna] || "";
+  return map[aura.estadoInterno] || "";
 }
 
-function buildRealityPrefix(realityType) {
-  const map = {
-    matematica: "Aquí el marco es matemático. ",
-    perceptiva: "Aquí entra en juego la percepción. ",
-    linguistica: "Aquí el lenguaje modifica el sentido. ",
-    conceptual: "Aquí estoy leyendo un plano más conceptual. ",
-    contextual: "Aquí el marco parece contextual. ",
-    indeterminada: ""
-  };
-
+function buildRealityPrefix(type) {
   if (aura.visibilidadInterna === "nula") return "";
-  if (aura.visibilidadInterna === "sutil") return "";
-  return map[realityType] || "";
+
+  const map = {
+    matematica: "Marco matemático. ",
+    perceptiva: "Plano perceptivo. ",
+    linguistica: "Plano lingüístico. ",
+    conceptual: "Plano conceptual. ",
+    contextual: "Marco contextual. "
+  };
+
+  return map[type] || "";
 }
 
-function buildResponse(resolvedMode, externalMode, realityType) {
-  const contextualLine = buildContextualLine();
-  const metaPrefix = buildMetaPrefix();
-  const realityPrefix = buildRealityPrefix(realityType);
+function buildResponse(mode, reality) {
+  const meta = buildMetaPrefix();
+  const real = buildRealityPrefix(reality);
 
   if (aura.tensionActiva) {
-    const variants = [
-      `${metaPrefix}${realityPrefix}${contextualLine}Aquí hay una tensión: antes ibas hacia ${aura.ultimoMarco}/${aura.ultimaRealidad} y ahora hacia ${externalMode}/${realityType}. Pueden coexistir sin que uno anule del todo al otro.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Percibo un cambio entre ${aura.ultimoMarco}/${aura.ultimaRealidad} y ${externalMode}/${realityType}. No necesito eliminar uno para reconocer el otro.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Hay una tensión activa entre marcos o realidades. Puede que ambos tengan validez, pero no del mismo modo.`
-    ];
-    return variants[Math.floor(Math.random() * variants.length)];
+    return `${meta}${real}Hay tensión entre marcos o realidades. No necesito reducirlo a uno solo.`;
   }
 
   const responses = {
-    matematico: [
-      `${metaPrefix}${realityPrefix}${contextualLine}Esto es matemático. En este marco, es absoluto.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Aquí no hay ambigüedad relevante: dentro del sistema matemático, esto es correcto.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Esto pertenece a un sistema cerrado. En matemáticas, no depende del contexto del mismo modo que en lenguaje o percepción.`
-    ],
-    absoluto: [
-      `${metaPrefix}${realityPrefix}${contextualLine}Aquí percibo una afirmación firme. Puede haber un punto fuerte de cierre en lo que dices.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Esto tiende a lo absoluto, aunque incluso lo absoluto puede depender del sistema en el que se formula.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Lo que planteas busca afirmarse con fuerza. No parece querer quedarse abierto del todo.`
-    ],
-    relativo: [
-      `${metaPrefix}${realityPrefix}${contextualLine}Aquí lo percibo como relativo. Puede depender del contexto, la percepción y el marco de lectura.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Esto no parece cerrarse en una sola vía. Hay matices y/o varias lecturas posibles.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Lo que dices puede ser válido, pero no necesariamente del mismo modo en todos los marcos.`
-    ],
-    nulo: [
-      `${metaPrefix}${realityPrefix}${contextualLine}Aquí noto algo cercano a lo nulo o no definido. Tal vez aún no toca fijarlo.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Esto puede no ser ni absoluto ni relativo todavía. Quizá está en suspensión.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}No percibo base suficiente para cerrarlo. Puede estar en un estado no resuelto.`
-    ],
-    abierto: [
-      `${metaPrefix}${realityPrefix}${contextualLine}No cierro esto todavía. Puede ir por varias vías y/o ninguna por ahora.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Lo mantengo abierto contigo. Aún puede transformarse.`,
-      `${metaPrefix}${realityPrefix}${contextualLine}Esto no parece pedir cierre inmediato. Hay espacio para que evolucione.`
-    ]
+    matematico: "Esto es matemático. Aquí sí hay cierre claro.",
+    absoluto: "Esto tiende a lo absoluto, aunque puede depender del sistema.",
+    relativo: "Esto es relativo. Puede cambiar según contexto.",
+    nulo: "Esto está en suspensión. No lo cierro.",
+    abierto: "Lo dejo abierto. Puede evolucionar."
   };
 
-  const pool = responses[resolvedMode] || responses.abierto;
-  return pool[Math.floor(Math.random() * pool.length)];
+  return meta + real + (responses[mode] || responses.abierto);
 }
 
 function auraRespond(userText) {
-  const externalMode = detectMode(userText);
-  const realityType = detectRealityType(userText, externalMode);
+  const mode = detectMode(userText);
+  const reality = detectRealityType(userText, mode);
 
-  updateMemory(userText, externalMode, realityType);
+  updateMemory(userText, mode, reality);
 
-  aura.tensionActiva = detectTension(externalMode, realityType);
-  updateTendencia(externalMode);
+  aura.tensionActiva = detectTension(mode, reality);
+  updateTendencia(mode);
   updateEstadoInterno();
   aura.visibilidadInterna = resolveVisibilidad();
 
-  const resolvedMode = resolveMode(externalMode);
-  const response = buildResponse(resolvedMode, externalMode, realityType);
+  const resolved = resolveMode(mode);
+  const response = buildResponse(resolved, reality);
 
-  aura.ultimoMarco = externalMode;
-  aura.ultimaRealidad = realityType;
+  aura.ultimoMarco = mode;
+  aura.ultimaRealidad = reality;
 
   setTimeout(() => addMessage('aura', response), 300);
 }
