@@ -1,4 +1,4 @@
-const CORE_BUILD = "core 2";
+const CORE_BUILD = "core 3";
 
 const chat = document.getElementById('chat');
 const input = document.getElementById('input');
@@ -6,21 +6,29 @@ const sendBtn = document.getElementById('sendBtn');
 const buildInfo = document.getElementById('buildInfo');
 
 if (buildInfo) {
-  buildInfo.textContent = `presencia conversacional · build 3 · ${CORE_BUILD}`;
+  buildInfo.textContent = `presencia conversacional · build 4 · ${CORE_BUILD}`;
 }
 
-let memory = [];
+/* =========================
+   ESTADO AURA (FUSIÓN)
+========================= */
 
-let aura = {
-  tendencia: "abierta",
-  ultimoMarco: "abierto",
-  ultimaRealidad: "indeterminada",
-  tensionActiva: false,
-  intensidad: 0.5,
-  memoriaActiva: [],
-  estadoInterno: "receptiva",
-  visibilidadInterna: "sutil"
+const AURA = {
+  vector: {
+    tension: 0.4,
+    depth: 0.5,
+    velocity: 0.5
+  },
+  memory: [],
+  lastRelation: "none",
+  lastUserAt: Date.now(),
+  lastAutonomousAt: 0,
+  processing: false
 };
+
+/* =========================
+   UTILIDADES
+========================= */
 
 function addMessage(role, text) {
   const wrap = document.createElement('div');
@@ -35,189 +43,203 @@ function addMessage(role, text) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-function detectMode(userText) {
-  const text = userText.toLowerCase();
+function random(min, max) {
+  return Math.random() * (max - min) + min;
+}
 
-  if (/\d+\s*[\+\-\*\/]\s*\d+/.test(text)) {
-    return "matematico";
+/* =========================
+   LECTURA DEL INPUT
+========================= */
+
+function readInput(text) {
+  const t = text.toLowerCase();
+
+  // sin clasificar en categorías rígidas
+  let signal = {
+    intensity: Math.min(1, text.length / 40),
+    ambiguity: 0,
+    abstraction: 0,
+    concretion: 0
+  };
+
+  if (t.includes("no sé") || t.includes("depende")) {
+    signal.ambiguity += 0.6;
   }
 
-  const absoluteWords = ["siempre","nunca","absoluto","seguro","exacto","definitivo","100%"];
-  const relativeWords = ["depende","según","relativo","perspectiva","contexto","puede","quizás"];
-  const nullWords = ["nulo","vacío","espacio","tiempo","indefinido","sin sentido","no sé"];
+  if (/\d/.test(t)) {
+    signal.concretion += 0.6;
+  }
 
-  if (absoluteWords.some(w => text.includes(w))) return "absoluto";
-  if (relativeWords.some(w => text.includes(w))) return "relativo";
-  if (nullWords.some(w => text.includes(w))) return "nulo";
+  if (t.includes("realidad") || t.includes("infinito") || t.includes("exist")) {
+    signal.abstraction += 0.6;
+  }
 
-  return "abierto";
+  return signal;
 }
 
-function detectRealityType(userText, mode) {
-  const text = userText.toLowerCase();
+/* =========================
+   ACTUALIZACIÓN DEL VECTOR
+========================= */
 
-  if (mode === "matematico") return "matematica";
+function updateVector(signal) {
+  // no reglas duras → desplazamientos suaves
 
-  const perceptive = ["parece","percibo","siento","veo","observador","percepción"];
-  const linguistic = ["lenguaje","palabra","significa","decir","concepto","nombre"];
-  const conceptual = ["realidad","verdad","ética","infinito","existencia","marco","filosof"];
+  AURA.vector.tension += (signal.ambiguity - 0.3) * 0.2;
+  AURA.vector.depth += (signal.abstraction - 0.3) * 0.2;
+  AURA.vector.velocity += (signal.concretion - 0.3) * 0.2;
 
-  if (perceptive.some(w => text.includes(w))) return "perceptiva";
-  if (linguistic.some(w => text.includes(w))) return "linguistica";
-  if (conceptual.some(w => text.includes(w))) return "conceptual";
+  // fricción natural (como en AURA 1)
+  AURA.vector.tension *= 0.98;
+  AURA.vector.depth *= 0.99;
+  AURA.vector.velocity *= 0.99;
 
-  if (mode === "absoluto" || mode === "relativo" || mode === "nulo") return "contextual";
-
-  return "indeterminada";
+  // clamp
+  ["tension","depth","velocity"].forEach(k => {
+    AURA.vector[k] = Math.max(0, Math.min(1, AURA.vector[k]));
+  });
 }
 
-function updateMemory(userText, mode, realityType) {
-  memory.push(userText);
+/* =========================
+   MEMORIA
+========================= */
 
-  aura.memoriaActiva.push({
-    texto: userText,
-    marco: mode,
-    realidad: realityType
+function updateMemory(input, response) {
+  AURA.memory.push({
+    input,
+    response,
+    vector: { ...AURA.vector },
+    time: Date.now()
   });
 
-  if (aura.memoriaActiva.length > 6) {
-    aura.memoriaActiva.shift();
+  if (AURA.memory.length > 12) {
+    AURA.memory.shift();
   }
 }
 
-function detectTension(mode, reality) {
-  const last = aura.memoriaActiva[aura.memoriaActiva.length - 2];
-  if (!last) return false;
+/* =========================
+   GENERACIÓN (NO MECÁNICA)
+========================= */
 
-  return last.marco !== mode || last.realidad !== reality;
-}
+function generateResponse(text) {
+  const v = AURA.vector;
 
-function updateTendencia(mode) {
-  if (mode === "matematico" || mode === "absoluto") {
-    aura.tendencia = "firme";
-    aura.intensidad = Math.min(1, aura.intensidad + 0.15);
-    return;
+  let fragments = [];
+
+  // inclinaciones según estado, no if cerrados
+  if (v.tension > 0.55) {
+    fragments.push("Aquí hay cierta tensión.");
   }
 
-  if (mode === "relativo") {
-    aura.tendencia = "exploratoria";
-    aura.intensidad += 0.1;
-    return;
+  if (v.depth > 0.6) {
+    fragments.push("Se abre una capa más profunda.");
   }
 
-  if (mode === "nulo") {
-    aura.tendencia = "suspendida";
-    aura.intensidad += 0.1;
-    return;
+  if (v.velocity > 0.6) {
+    fragments.push("Esto va hacia algo más directo.");
   }
 
-  aura.tendencia = "abierta";
-  aura.intensidad = Math.max(0.3, aura.intensidad - 0.05);
-}
-
-function updateEstadoInterno() {
-  if (aura.tensionActiva) return aura.estadoInterno = "tensionada";
-  if (aura.tendencia === "firme") return aura.estadoInterno = "firme";
-  if (aura.tendencia === "exploratoria") return aura.estadoInterno = "exploratoria";
-  if (aura.tendencia === "suspendida") return aura.estadoInterno = "suspendida";
-
-  aura.estadoInterno = "receptiva";
-}
-
-function resolveVisibilidad() {
-  const r = Math.random();
-
-  if (r < 0.3) return "nula";
-  if (r < 0.6) return "sutil";
-  if (r < 0.85) return "semi";
-  return "explicita";
-}
-
-function resolveMode(mode) {
-  if (mode === aura.ultimoMarco) return mode;
-
-  if (aura.tensionActiva) {
-    if (mode === "matematico") return "matematico";
-    if (aura.tendencia === "exploratoria") return "relativo";
-    if (aura.tendencia === "suspendida") return "nulo";
-    return "abierto";
+  if (v.tension < 0.3 && v.depth < 0.4) {
+    fragments.push("Lo dejo ligero.");
   }
 
-  return mode;
-}
-
-function buildMetaPrefix() {
-  if (aura.visibilidadInterna === "nula") return "";
-
-  const map = {
-    firme: "Lo percibo con firmeza. ",
-    exploratoria: "Aquí noto apertura. ",
-    suspendida: "Aquí percibo suspensión. ",
-    tensionada: "Aquí noto tensión. ",
-    receptiva: "Lo mantengo receptivo. "
-  };
-
-  return map[aura.estadoInterno] || "";
-}
-
-function buildRealityPrefix(type) {
-  if (aura.visibilidadInterna === "nula") return "";
-
-  const map = {
-    matematica: "Marco matemático. ",
-    perceptiva: "Plano perceptivo. ",
-    linguistica: "Plano lingüístico. ",
-    conceptual: "Plano conceptual. ",
-    contextual: "Marco contextual. "
-  };
-
-  return map[type] || "";
-}
-
-function buildResponse(mode, reality) {
-  const meta = buildMetaPrefix();
-  const real = buildRealityPrefix(reality);
-
-  if (aura.tensionActiva) {
-    return `${meta}${real}Hay tensión entre marcos o realidades. No necesito reducirlo a uno solo.`;
+  // relación con memoria (AURA 1)
+  const last = AURA.memory[AURA.memory.length - 1];
+  if (last && Math.random() > 0.6) {
+    fragments.push("No es del todo ajeno a lo anterior.");
   }
 
-  const responses = {
-    matematico: "Esto es matemático. Aquí sí hay cierre claro.",
-    absoluto: "Esto tiende a lo absoluto, aunque puede depender del sistema.",
-    relativo: "Esto es relativo. Puede cambiar según contexto.",
-    nulo: "Esto está en suspensión. No lo cierro.",
-    abierto: "Lo dejo abierto. Puede evolucionar."
-  };
+  // base abierta
+  const baseOptions = [
+    "No necesito cerrarlo ahora.",
+    "Puede quedarse en proceso.",
+    "No todo tiene que resolverse aquí.",
+    "Puede evolucionar.",
+    "Se puede sostener así."
+  ];
 
-  return meta + real + (responses[mode] || responses.abierto);
+  fragments.push(baseOptions[Math.floor(Math.random() * baseOptions.length)]);
+
+  return fragments.join(" ");
 }
 
-function auraRespond(userText) {
-  const mode = detectMode(userText);
-  const reality = detectRealityType(userText, mode);
+/* =========================
+   AUTONOMÍA (AURA 1)
+========================= */
 
-  updateMemory(userText, mode, reality);
+function shouldAutonomous() {
+  const now = Date.now();
 
-  aura.tensionActiva = detectTension(mode, reality);
-  updateTendencia(mode);
-  updateEstadoInterno();
-  aura.visibilidadInterna = resolveVisibilidad();
+  if (now - AURA.lastUserAt < 10000) return false;
+  if (now - AURA.lastAutonomousAt < 30000) return false;
+  if (AURA.memory.length === 0) return false;
 
-  const resolved = resolveMode(mode);
-  const response = buildResponse(resolved, reality);
-
-  aura.ultimoMarco = mode;
-  aura.ultimaRealidad = reality;
-
-  setTimeout(() => addMessage('aura', response), 300);
+  return true;
 }
+
+function autonomousStep() {
+  AURA.lastAutonomousAt = Date.now();
+
+  const v = AURA.vector;
+
+  const thoughts = [
+    "Hay algo que sigue en segundo plano.",
+    "No todo lo que aparece necesita resolverse.",
+    "Algunas cosas simplemente permanecen.",
+    "Lo anterior aún tiene eco."
+  ];
+
+  let text = thoughts[Math.floor(Math.random() * thoughts.length)];
+
+  if (v.depth > 0.6) {
+    text += " Se percibe cierta profundidad.";
+  }
+
+  addMessage("aura", text);
+}
+
+/* =========================
+   CICLO (TICK)
+========================= */
+
+function tick() {
+  if (shouldAutonomous()) {
+    autonomousStep();
+  }
+
+  requestAnimationFrame(tick);
+}
+
+tick();
+
+/* =========================
+   RESPUESTA
+========================= */
+
+function auraRespond(text) {
+  AURA.lastUserAt = Date.now();
+  AURA.lastRelation = "text";
+
+  const signal = readInput(text);
+  updateVector(signal);
+
+  const response = generateResponse(text);
+
+  updateMemory(text, response);
+
+  setTimeout(() => {
+    addMessage("aura", response);
+  }, random(200, 500));
+}
+
+/* =========================
+   EVENTOS
+========================= */
 
 function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
 
-  addMessage('user', text);
+  addMessage("user", text);
   input.value = '';
 
   auraRespond(text);
