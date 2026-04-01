@@ -1,0 +1,134 @@
+:root {
+  --bg: #f7f8fb;
+  --panel: #ffffff;
+  --line: #e6eaf2;
+  --text: #111827;
+  --muted: #6b7280;
+  --acc: #2563eb;
+  --user: #2563eb;
+  --user-text: #ffffff;
+  --aura: #ffffff;
+  --aura-text: #111827;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Arial, sans-serif;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.orb {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #9ec5ff, #2563eb 60%, #0f172a);
+  box-shadow: 0 0 24px rgba(37, 99, 235, .35);
+  flex: 0 0 auto;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.brand p {
+  margin: 2px 0 0;
+  font-size: .8rem;
+  color: var(--muted);
+}
+
+.chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.msg {
+  display: flex;
+  width: 100%;
+}
+
+.msg.user {
+  justify-content: flex-end;
+}
+
+.msg.aura {
+  justify-content: flex-start;
+}
+
+.bubble {
+  max-width: 78%;
+  padding: 12px 14px;
+  border-radius: 18px;
+  line-height: 1.55;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.msg.user .bubble {
+  background: var(--user);
+  color: var(--user-text);
+  border-top-right-radius: 6px;
+}
+
+.msg.aura .bubble {
+  background: var(--aura);
+  color: var(--aura-text);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--acc);
+  border-top-left-radius: 6px;
+}
+
+.composer {
+  display: flex;
+  gap: 10px;
+  padding: 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+#input {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  font: inherit;
+  min-height: 56px;
+}
+
+#sendBtn {
+  border: none;
+  border-radius: 16px;
+  padding: 0 22px;
+  background: var(--acc);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  min-width: 96px;
+}
