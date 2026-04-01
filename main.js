@@ -21,6 +21,11 @@ function addMessage(role, text) {
 function detectMode(userText) {
   const text = userText.toLowerCase();
 
+  // prioridad máxima: marco matemático
+  if (/\d+\s*[\+\-\*\/]\s*\d+/.test(text)) {
+    return "matematico";
+  }
+
   const absoluteWords = [
     "siempre", "nunca", "absoluto", "seguro", "exacto", "definitivo", "100%"
   ];
@@ -51,9 +56,7 @@ function auraRespond(userText) {
     contextualLine = `Antes dijiste "${last}". `;
   }
 
-  // 🔥 detección de tensión
   let tension = false;
-
   if (last) {
     const lastMode = detectMode(last);
     if (lastMode !== auraState) {
@@ -67,6 +70,11 @@ function auraRespond(userText) {
     response = `${contextualLine}Aquí hay una tensión: antes ibas hacia ${detectMode(last)} y ahora hacia ${auraState}. Puede que ambas cosas sean válidas en marcos distintos.`;
   } else {
     const responses = {
+      matematico: [
+        `${contextualLine}Esto es matemático. En este marco, es absoluto.`,
+        `${contextualLine}Aquí no hay ambigüedad: dentro del sistema matemático, esto es correcto.`,
+        `${contextualLine}Esto pertenece a un sistema cerrado. En matemáticas, no depende del contexto.`
+      ],
       absoluto: [
         `${contextualLine}Aquí percibo algo bastante definido. Puede haber un punto firme.`,
         `${contextualLine}Esto tiende a lo absoluto, aunque incluso lo absoluto depende del sistema.`
