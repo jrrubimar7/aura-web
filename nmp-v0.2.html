@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AURA NMP — Núcleo Mínimo de Presencia v0.2</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@300;400;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #080a0f;
+    --surface:  #0d1018;
+    --border:   rgba(255,255,255,0.06);
+    --dim:      rgba(255,255,255,0.2);
+    --mid:      rgba(255,255,255,0.5);
+    --hi:       rgba(255,255,255,0.9);
+    --accent-t: #7fffd4;
+    --accent-d: #b088ff;
+    --trail:    rgba(127,255,212,0.18);
+    --ghost:    rgba(255,255,255,0.45);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--hi);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #shell {
+    display: grid;
+    grid-template-columns: 1fr 240px;
+    grid-template-rows: 40px 1fr 36px;
+    width: 100vw; height: 100vh;
+    gap: 0;
+  }
+
+  #hdr {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 18px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  #hdr .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700; font-size: 15px; letter-spacing: 0.15em;
+    color: var(--accent-t);
+  }
+  #hdr .sub {
+    font-size: 9px; letter-spacing: 0.2em; color: var(--dim);
+    text-transform: uppercase;
+  }
+  #hdr .pulse {
+    margin-left: auto;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent-t);
+    box-shadow: 0 0 8px var(--accent-t);
+    animation: blink 2s ease-in-out infinite;
+  }
+  @keyframes blink {
+    0%,100% { opacity: 1; } 50% { opacity: 0.2; }
+  }
+
+  #canvasWrap {
+    position: relative;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  #cv { display: block; width: 100%; height: 100%; }
+
+  #canvasWrap::before, #canvasWrap::after {
+    content: '';
+    position: absolute; pointer-events: none;
+    background: var(--border);
+  }
+  #canvasWrap::before { left: 50%; top: 0; width: 1px; height: 100%; }
+  #canvasWrap::after  { left: 0; top: 50%; width: 100%; height: 1px; }
+
+  .ax-label {
+    position: absolute; font-size: 9px; letter-spacing: 0.15em;
+    color: var(--dim); pointer-events: none;
+    text-transform: uppercase;
+  }
+  #ax-t-lo { bottom: 6px; left: 6px; color: var(--accent-t); opacity: 0.5; }
+  #ax-t-hi { bottom: 6px; right: 6px; color: var(--accent-t); opacity: 0.5; }
+  #ax-d-lo { top: 6px; left: 50%; transform: translateX(-50%); color: var(--accent-d); opacity: 0.5; }
+  #ax-d-hi { bottom: 6px; left: 50%; transform: translateX(-50%); color: var(--accent-d); opacity: 0.5; }
+
+  #side {
+    border-left: 1px solid var(--border);
+    padding: 16px 14px;
+    display: flex; flex-direction: column; gap: 18px;
+    overflow-y: auto;
+  }
+
+  .block-title {
+    font-size: 8px; letter-spacing: 0.25em; color: var(--dim);
+    text-transform: uppercase; margin-bottom: 8px;
+    border-bottom: 1px solid var(--border); padding-bottom: 4px;
+  }
+
+  .gauge-row { margin-bottom: 7px; }
+  .gauge-label {
+    display: flex; justify-content: space-between;
+    margin-bottom: 3px;
+  }
+  .gauge-label span:first-child { color: var(--mid); font-size: 10px; }
+  .gauge-label span:last-child  { color: var(--hi); font-size: 10px; font-weight: 700; }
+  .gauge-track {
+    height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px;
+    overflow: hidden;
+  }
+  .gauge-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.15s ease;
+  }
+  .g-tension .gauge-fill { background: var(--accent-t); }
+  .g-depth   .gauge-fill { background: var(--accent-d); }
+  .g-vel     .gauge-fill { background: rgba(255,200,80,0.8); }
+  .g-w0      .gauge-fill { background: rgba(255,127,127,0.7); }
+  .g-w1      .gauge-fill { background: rgba(127,200,255,0.7); }
+  .g-w2      .gauge-fill { background: rgba(200,255,127,0.7); }
+  .g-ghost   .gauge-fill { background: rgba(255,255,255,0.65); }
+
+  .at-row {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 5px;
+  }
+  .at-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .at-info { color: var(--dim); font-size: 9px; line-height: 1.5; }
+  .at-info strong { color: var(--mid); display: block; }
+
+  #phase-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px; font-weight: 700;
+    color: var(--accent-t);
+    letter-spacing: 0.05em;
+    min-height: 20px;
+  }
+  #phase-desc {
+    font-size: 9px; color: var(--dim); line-height: 1.6;
+    margin-top: 4px; min-height: 40px;
+  }
+
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn {
+    padding: 5px 9px; border: 1px solid var(--border);
+    background: transparent; color: var(--mid);
+    font-family: 'Space Mono', monospace; font-size: 9px;
+    cursor: pointer; border-radius: 2px;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+  .btn:hover { border-color: var(--accent-t); color: var(--accent-t); }
+  .btn:active { background: rgba(127,255,212,0.08); }
+
+  .ctrl-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .ctrl-row label { color: var(--dim); font-size: 9px; min-width: 54px; }
+  input[type=range] {
+    flex: 1; height: 3px; appearance: none;
+    background: rgba(255,255,255,0.08); border-radius: 2px; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    appearance: none; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--accent-t); cursor: pointer;
+  }
+  .ctrl-val { color: var(--hi); font-size: 9px; min-width: 28px; text-align: right; }
+
+  #ftr {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 16px;
+    border-top: 1px solid var(--border);
+    color: var(--dim); font-size: 9px; letter-spacing: 0.1em;
+  }
+  #ftr span { margin-right: auto; }
+  #tick-counter { color: var(--mid); }
+  #variance-out { color: var(--accent-t); }
+
+  #flash {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at center, rgba(127,255,212,0.07) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.05s;
+  }
+</style>
+</head>
+<body>
+<div id="shell">
+
+  <div id="hdr">
+    <span class="logo">AURA</span>
+    <span class="sub">Núcleo Mínimo de Presencia · v0.2</span>
+    <div class="pulse"></div>
+  </div>
+
+  <div id="canvasWrap">
+    <canvas id="cv"></canvas>
+    <div id="flash"></div>
+    <span class="ax-label" id="ax-t-lo">contracción ←</span>
+    <span class="ax-label" id="ax-t-hi">→ expansión</span>
+    <span class="ax-label" id="ax-d-lo">superficie ↑</span>
+    <span class="ax-label" id="ax-d-hi">↓ fondo</span>
+  </div>
+
+  <div id="side">
+
+    <div>
+      <div class="block-title">Campo</div>
+      <div class="gauge-row g-tension">
+        <div class="gauge-label"><span>tensión</span><span id="v-tension">0.50</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="b-tension" style="width:50%"></div></div>
+      </div>
+      <div class="gauge-row g-depth">
+        <div class="gauge-label"><span>profundidad</span><span id="v-depth">0.50</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="b-depth" style="width:50%"></div></div>
+      </div>
+      <div class="gauge-row g-vel">
+        <div class="gauge-label"><span>velocidad</span><span id="v-vel">0.00</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="b-vel" style="width:0%"></div></div>
+      </div>
+      <div class="gauge-row g-ghost">
+        <div class="gauge-label"><span>ghost Δ</span><span id="v-ghost">0.00</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="b-ghost" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="block-title">Pesos (dinámicos)</div>
+      <div class="gauge-row g-w0">
+        <div class="gauge-label"><span>A₀ contracción</span><span id="v-w0">0.33</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="b-w0" style="width:33%"></div></div>
+      </div>
+      <div class="gauge-row g-w1">
+        <div class="gauge-label"><span>A₁ expansión</span><span id="v-w1">0.33</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="b-w1" style="width:33%"></div></div>
+      </div>
+      <div class="gauge-row g-w2">
+        <div class="gauge-label"><span>A₂ umbral</span><span id="v-w2">0.33</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="b-w2" style="width:33%"></div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="block-title">Atractores</div>
+      <div class="at-row">
+        <div class="at-dot" style="background:rgba(255,127,127,0.8)"></div>
+        <div class="at-info"><strong>A₀ — colapso / contracción</strong>tensión baja, profundidad alta</div>
+      </div>
+      <div class="at-row">
+        <div class="at-dot" style="background:rgba(127,200,255,0.8)"></div>
+        <div class="at-info"><strong>A₁ — expansión / superficie</strong>tensión alta, profundidad baja</div>
+      </div>
+      <div class="at-row">
+        <div class="at-dot" style="background:rgba(200,255,127,0.8)"></div>
+        <div class="at-info"><strong>A₂ — umbral / suspensión</strong>tensión media, profundidad media</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="block-title">Fase actual</div>
+      <div id="phase-name">—</div>
+      <div id="phase-desc"></div>
+    </div>
+
+    <div>
+      <div class="block-title">Perturbación</div>
+      <div class="btn-row">
+        <button class="btn" onclick="perturb(0.3, 0.1)">expansión</button>
+        <button class="btn" onclick="perturb(-0.3,-0.1)">colapso</button>
+        <button class="btn" onclick="perturb(0.0, 0.4)">inmersión</button>
+        <button class="btn" onclick="perturb(0.1,-0.4)">ascenso</button>
+        <button class="btn" onclick="perturb(0.4, 0.4)">impulso</button>
+        <button class="btn" onclick="perturbRandom()">azar</button>
+        <button class="btn" onclick="clearTrail()">limpiar</button>
+      </div>
+      <p style="font-size:9px;color:var(--dim);margin-top:6px;">o clic en el campo</p>
+    </div>
+
+    <div>
+      <div class="block-title">Parámetros</div>
+      <div class="ctrl-row">
+        <label>fricción</label>
+        <input type="range" id="sl-friction" min="0.90" max="0.999" step="0.001" value="0.975">
+        <span class="ctrl-val" id="sv-friction">0.975</span>
+      </div>
+      <div class="ctrl-row">
+        <label>ruido</label>
+        <input type="range" id="sl-noise" min="0.000" max="0.040" step="0.001" value="0.012">
+        <span class="ctrl-val" id="sv-noise">0.012</span>
+      </div>
+      <div class="ctrl-row">
+        <label>atracción</label>
+        <input type="range" id="sl-rate" min="0.01" max="0.12" step="0.005" value="0.035">
+        <span class="ctrl-val" id="sv-rate">0.035</span>
+      </div>
+      <div class="ctrl-row">
+        <label>w-drift</label>
+        <input type="range" id="sl-wdrift" min="0.001" max="0.02" step="0.001" value="0.006">
+        <span class="ctrl-val" id="sv-wdrift">0.006</span>
+      </div>
+      <div class="ctrl-row">
+        <label>lfo amp</label>
+        <input type="range" id="sl-lfo" min="0.000" max="0.010" step="0.0005" value="0.0020">
+        <span class="ctrl-val" id="sv-lfo">0.002</span>
+      </div>
+      <div class="ctrl-row">
+        <label>jitter</label>
+        <input type="range" id="sl-jitter" min="0.0000" max="0.0100" step="0.0005" value="0.0015">
+        <span class="ctrl-val" id="sv-jitter">0.0015</span>
+      </div>
+      <div class="ctrl-row">
+        <label>ghost lag</label>
+        <input type="range" id="sl-ghost" min="0.001" max="0.040" step="0.001" value="0.008">
+        <span class="ctrl-val" id="sv-ghost">0.008</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="ftr">
+    <span>sin LLM · sin interfaz · solo campo</span>
+    <span id="tick-counter">tick 0</span>
+    <span id="variance-out">var —</span>
+  </div>
+
+</div>
+
+<script>
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const flash = document.getElementById('flash');
+
+let FRICTION = 0.975;
+let NOISE    = 0.012;
+let RATE     = 0.035;
+let WDRIFT   = 0.006;
+let LFO_AMP  = 0.0020;
+let JITTER   = 0.0015;
+let GHOST_LAG = 0.008;
+
+const TICK_MS = 50;
+const TRAIL_MAX = 700;
+
+const field = { t: 0.5, d: 0.5, vt: 0.0, vd: 0.0 };
+const ghost = { t: 0.5, d: 0.5 };
+
+const attractors = [
+  { at: 0.12, ad: 0.85, w: 0.33, color: 'rgba(255,127,127,0.9)'  },
+  { at: 0.88, ad: 0.15, w: 0.33, color: 'rgba(127,200,255,0.9)'  },
+  { at: 0.50, ad: 0.50, w: 0.34, color: 'rgba(200,255,127,0.9)'  },
+];
+
+const trail = [];
+const velHistory = [];
+let tickCount = 0;
+
+function resize() {
+  const wrap = cv.parentElement;
+  cv.width  = wrap.clientWidth;
+  cv.height = wrap.clientHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function toCanvas(t, d) {
+  const pad = 40;
+  const x = pad + t * (cv.width  - pad * 2);
+  const y = pad + d * (cv.height - pad * 2);
+  return { x, y };
+}
+function fromCanvas(x, y) {
+  const pad = 40;
+  return {
+    t: clamp((x - pad) / (cv.width  - pad * 2), 0, 1),
+    d: clamp((y - pad) / (cv.height - pad * 2), 0, 1),
+  };
+}
+
+function computeLFO(time) {
+  const driftT =
+    Math.sin(time * 1.0) * 0.5 +
+    Math.sin(time * 1.618) * 0.3 +
+    Math.sin(time * 2.414) * 0.2;
+
+  const driftD =
+    Math.cos(time * 0.9) * 0.5 +
+    Math.cos(time * 1.3) * 0.3 +
+    Math.sin(time * 2.1) * 0.2;
+
+  return {
+    t: driftT * LFO_AMP,
+    d: driftD * LFO_AMP
+  };
+}
+
+function tick() {
+  tickCount++;
+
+  let wSum = 0;
+  attractors.forEach(a => {
+    a.w += (Math.random() - 0.5) * WDRIFT;
+    a.w  = clamp(a.w, 0.05, 0.90);
+    wSum += a.w;
+  });
+  attractors.forEach(a => a.w /= wSum);
+
+  let ft = 0, fd = 0, wTotal = 0;
+  attractors.forEach(a => {
+    ft += a.at * a.w;
+    fd += a.ad * a.w;
+    wTotal += a.w;
+  });
+  ft /= wTotal;
+  fd /= wTotal;
+
+  const at = (ft - field.t) * RATE;
+  const ad = (fd - field.d) * RATE;
+
+  const vel = Math.sqrt(field.vt ** 2 + field.vd ** 2);
+  const noiseScale = NOISE * (1 / (1 + vel * 8));
+  const nt = (Math.random() - 0.5) * 2 * noiseScale;
+  const nd = (Math.random() - 0.5) * 2 * noiseScale;
+
+  const time = Date.now() * 0.001;
+  const lfo = computeLFO(time);
+
+  field.vt = (field.vt + at + nt + lfo.t) * FRICTION;
+  field.vd = (field.vd + ad + nd + lfo.d) * FRICTION;
+
+  field.t = clamp(field.t + field.vt, 0, 1);
+  field.d = clamp(field.d + field.vd, 0, 1);
+
+  if (field.t <= 0 || field.t >= 1) field.vt *= -0.4;
+  if (field.d <= 0 || field.d >= 1) field.vd *= -0.4;
+
+  const speed = Math.sqrt(field.vt ** 2 + field.vd ** 2);
+  if (speed < 0.03) {
+    field.t = clamp(field.t + (Math.random() - 0.5) * JITTER, 0, 1);
+    field.d = clamp(field.d + (Math.random() - 0.5) * JITTER, 0, 1);
+  }
+
+  ghost.t += (field.t - ghost.t) * GHOST_LAG;
+  ghost.d += (field.d - ghost.d) * GHOST_LAG;
+
+  const dx = field.t - ghost.t;
+  const dy = field.d - ghost.d;
+  const ghostDelta = Math.sqrt(dx * dx + dy * dy);
+
+  trail.push({ t: field.t, d: field.d, g: ghostDelta, tick: tickCount });
+  if (trail.length > TRAIL_MAX) trail.shift();
+
+  velHistory.push(speed);
+  if (velHistory.length > 200) velHistory.shift();
+
+  updateUI(ghostDelta);
+}
+
+function perturb(dt, dd, magnitude = 1.0) {
+  field.vt += dt * magnitude * 0.18;
+  field.vd += dd * magnitude * 0.18;
+  flash.style.opacity = '1';
+  setTimeout(() => flash.style.opacity = '0', 80);
+}
+
+function perturbRandom() {
+  perturb((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0.8 + Math.random() * 0.6);
+}
+
+function clearTrail() { trail.length = 0; }
+
+cv.addEventListener('click', e => {
+  const rect = cv.getBoundingClientRect();
+  const { t, d } = fromCanvas(e.clientX - rect.left, e.clientY - rect.top);
+  const dt = t - field.t;
+  const dd = d - field.d;
+  perturb(dt * 3, dd * 3, 1.0);
+});
+
+function readPhase(ghostDelta) {
+  const t = field.t, d = field.d;
+  const vel = Math.sqrt(field.vt ** 2 + field.vd ** 2);
+
+  if (ghostDelta > 0.12) {
+    return { name: 'desfase', desc: 'La partícula principal y la ghost se han separado. Hay tensión interna visible.' };
+  }
+  if (vel > 0.025) {
+    return { name: 'en movimiento', desc: 'El campo se desplaza activamente. La perturbación aún no se ha absorbido.' };
+  }
+  if (t < 0.3 && d > 0.7) {
+    return { name: 'colapso', desc: 'Contracción máxima, profundidad alta. El sistema se ha retirado hacia adentro.' };
+  }
+  if (t > 0.7 && d < 0.3) {
+    return { name: 'expansión', desc: 'Tensión expandida, superficie. El sistema se proyecta hacia afuera.' };
+  }
+  if (Math.abs(t - 0.5) < 0.15 && Math.abs(d - 0.5) < 0.15) {
+    return { name: 'suspensión', desc: 'El sistema habita el umbral. No colapsa ni se expande. Tensión sostenida.' };
+  }
+  if (t > 0.6 && d > 0.6) {
+    return { name: 'saturación', desc: 'Alta tensión y alta profundidad simultáneas. Estado inestable.' };
+  }
+  if (t < 0.4 && d < 0.4) {
+    return { name: 'vacío', desc: 'Baja tensión y baja profundidad. El sistema está casi ausente.' };
+  }
+  return { name: 'transición', desc: 'El campo está entre fases. No hay nombre definitivo para este estado.' };
+}
+
+function updateUI(ghostDelta) {
+  const vel = Math.sqrt(field.vt ** 2 + field.vd ** 2);
+
+  setGauge('tension', field.t);
+  setGauge('depth',   field.d);
+  setGauge('vel',     Math.min(vel * 8, 1));
+  setGauge('ghost',   Math.min(ghostDelta * 5, 1));
+
+  setGauge('w0', attractors[0].w);
+  setGauge('w1', attractors[1].w);
+  setGauge('w2', attractors[2].w);
+
+  const ph = readPhase(ghostDelta);
+  document.getElementById('phase-name').textContent = ph.name;
+  document.getElementById('phase-desc').textContent = ph.desc;
+
+  document.getElementById('tick-counter').textContent = `tick ${tickCount}`;
+  if (velHistory.length > 10) {
+    const mean = velHistory.reduce((s,v) => s+v, 0) / velHistory.length;
+    const vari = velHistory.reduce((s,v) => s + (v-mean)**2, 0) / velHistory.length;
+    document.getElementById('variance-out').textContent = `var ${vari.toFixed(5)}`;
+  }
+}
+
+function setGauge(id, val) {
+  document.getElementById(`v-${id}`).textContent = val.toFixed(2);
+  document.getElementById(`b-${id}`).style.width  = (val * 100).toFixed(1) + '%';
+}
+
+function render() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const x = 40 + (i / 4) * (cv.width - 80);
+    const y = 40 + (i / 4) * (cv.height - 80);
+    ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x, cv.height - 40); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(cv.width - 40, y); ctx.stroke();
+  }
+
+  attractors.forEach(a => {
+    const p = toCanvas(a.at, a.ad);
+    const r = 18 + a.w * 60;
+    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+    grad.addColorStop(0, a.color.replace('0.9', String(a.w * 0.25)));
+    grad.addColorStop(1, 'transparent');
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = a.color;
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '9px Space Mono, monospace';
+    ctx.fillText(`w=${a.w.toFixed(2)}`, p.x + 7, p.y - 7);
+  });
+
+  {
+    let ft = 0, fd = 0;
+    attractors.forEach(a => { ft += a.at * a.w; fd += a.ad * a.w; });
+    const p = toCanvas(ft, fd);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  if (trail.length > 1) {
+    for (let i = 1; i < trail.length; i++) {
+      const age = i / trail.length;
+      const alpha = age * age * 0.7;
+      const p0 = toCanvas(trail[i-1].t, trail[i-1].d);
+      const p1 = toCanvas(trail[i].t, trail[i].d);
+      const tensionAlpha = Math.min(1, trail[i].g * 7);
+
+      ctx.beginPath();
+  
