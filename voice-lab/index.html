@@ -59,31 +59,45 @@ AURA activa. El campo respira. La interpretación fluctúa entre tensión y calm
 
 let synth = window.speechSynthesis;
 
+// 🔥 ESTADO SIMULADO (luego será NMP real)
+function getState(){
+  const t = Date.now() * 0.001;
+
+  return {
+    tension: (Math.sin(t) + 1) / 2,
+    calma: (Math.cos(t) + 1) / 2
+  };
+}
+
 function speak(){
   stop();
 
   const text = document.getElementById("text").value;
+  const state = getState();
 
   const utter = new SpeechSynthesisUtterance(text);
 
   utter.lang = "es-ES";
-  utter.rate = 1;
-  utter.pitch = 1;
 
-  // Selección de voz (Android fallback automático)
+  // 🔥 VOZ DINÁMICA
+  utter.rate  = 0.85 + state.tension * 0.6;
+  utter.pitch = 0.8  + state.calma   * 0.6;
+
   const voices = synth.getVoices();
   const esVoice = voices.find(v => v.lang.includes("es"));
 
   if(esVoice) utter.voice = esVoice;
 
   synth.speak(utter);
+
+  console.log("STATE:", state);
 }
 
 function stop(){
   synth.cancel();
 }
 
-// cargar voces correctamente (Android fix)
+// fix Android voces
 speechSynthesis.onvoiceschanged = () => {
   synth.getVoices();
 };
