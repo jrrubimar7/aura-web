@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AURA Voice Lab v0.6</title>
+
+<style>
+body{
+  margin:0;
+  background:#0d1018;
+  color:#e8ecf1;
+  font-family:system-ui;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  min-height:100vh;
+  padding:24px 0;
+}
+button{
+  padding:14px 20px;
+  margin:10px;
+  border:none;
+  border-radius:12px;
+  background:#7fffd4;
+  color:#000;
+  font-size:16px;
+  cursor:pointer;
+}
+textarea{
+  width:80%;
+  max-width:700px;
+  height:100px;
+  margin-top:20px;
+  border-radius:10px;
+  padding:10px;
+  font-size:14px;
+}
+h1{
+  font-weight:500;
+  text-align:center;
+}
+#stateLabel{
+  margin-top:14px;
+  font-size:14px;
+  opacity:.85;
+  text-align:center;
+}
+#subLabel{
+  margin-top:8px;
+  font-size:12px;
+  opacity:.7;
+  text-align:center;
+}
+</style>
+</head>
+
+<body>
+
+<h1>AURA Voice Lab v0.6</h1>
+
+<textarea id="text">AURA activa. El campo respira. La interpretación fluctúa entre tensión y calma.</textarea>
+
+<div>
+  <button onclick="speak()">Hablar</button>
+  <button onclick="stop()">Parar</button>
+</div>
+
+<div id="stateLabel">Estado: esperando NMP...</div>
+<div id="subLabel">Fuente: fallback</div>
+
+<iframe id="nmpFrame" src="../nmp.html" style="display:none;"></iframe>
+
+<script>
+let synth = window.speechSynthesis;
+
+function readNMP(){
+  const frame = document.getElementById("nmpFrame");
+  if(!frame || !frame.contentWindow) return null;
+
+  try{
+    const w = frame.contentWindow;
+
+    if(w.field && w.ghost){
+      const dx = (w.field.t||0)-(w.ghost.t||0);
+      const dy = (w.field.d||0)-(w.ghost.d||0);
+      const gap = Math.sqrt(dx*dx+dy*dy);
+      const speed = Math.sqrt((w.field.vt||0)**2+(w.field.vd||0)**2);
+
+      return {
+        tension: Math.max(0,Math.min(1,w.field.t||0.5)),
+        depth: Math.max(0,Math.min(1,w.field.d||0.5)),
+        speed: Math.max(0,Math.min(1,speed*8)),
+        gap: Math.max(0,Math.min(1,gap*4))
+      };
+    }
+  }catch(e){}
+  return null;
+}
+
+function getState(){
+  const nmp = readNMP();
+  if(nmp){
+    return {
+      name:"NMP real",
+      source:"iframe",
+      rate:0.7+(nmp.speed*0.5)+(nmp.gap*0.2),
+      pitch:0.7+(nmp.tension*0.5)-(nmp.depth*0.2),
+      raw:nmp
+    };
+  }
+
+  const t = Date.now()*0.001;
+  return {
+    name:"fallback",
+    source:"simulado",
+    rate:0.8+Math.sin(t)*0.3,
+    pitch:0.8+Math.cos(t)*0.3,
+    raw:null
+  };
+}
+
+function updateStatus(){
+  const s = getState();
+  document.getElementById("stateLabel").textContent =
+    `Estado: ${s.name} · rate ${s.rate.toFixed(2)} · pitch ${s.pitch.toFixed(2)}`;
+  document.getElementById("subLabel").textContent =
+    s.raw ? `Fuente: ${s.source}` : `Fuente: ${s.source}`;
+}
+
+function speak(){
+  stop();
+  const text = document.getElementById("text").value;
+  const s = getState();
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang="es-ES";
+  utter.rate=s.rate;
+  utter.pitch=s.pitch;
+  synth.speak(utter);
+}
+
+function stop(){
+  synth.cancel();
+}
+
+window.addEventListener("load",()=>{
+  const frame = document.getElementById("nmpFrame");
+  if(frame){
+    frame.onload=()=>{
+      console.log("🔥 NMP cargado");
+      updateStatus();
+    }
+  }
+  setInterval(updateStatus,1200);
+});
+</script>
+
+</body>
+</html>
