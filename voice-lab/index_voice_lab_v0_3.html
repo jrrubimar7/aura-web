@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AURA Voice Lab v0.3</title>
+
+<style>
+body{
+  margin:0;
+  background:#0d1018;
+  color:#e8ecf1;
+  font-family:system-ui;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  min-height:100vh;
+  padding:24px 0;
+}
+
+button{
+  padding:14px 20px;
+  margin:10px;
+  border:none;
+  border-radius:12px;
+  background:#7fffd4;
+  color:#000;
+  font-size:16px;
+  cursor:pointer;
+}
+
+textarea{
+  width:80%;
+  max-width:700px;
+  height:100px;
+  margin-top:20px;
+  border-radius:10px;
+  padding:10px;
+  font-size:14px;
+}
+
+h1{
+  font-weight:500;
+  text-align:center;
+}
+
+#stateLabel{
+  margin-top:14px;
+  font-size:14px;
+  opacity:.85;
+  text-align:center;
+}
+</style>
+</head>
+
+<body>
+
+<h1>AURA Voice Lab v0.3</h1>
+
+<textarea id="text">AURA activa. El campo respira. La interpretación fluctúa entre tensión y calma.</textarea>
+
+<div>
+  <button onclick="speak()">Hablar</button>
+  <button onclick="stop()">Parar</button>
+</div>
+
+<div id="stateLabel">Estado: esperando NMP...</div>
+
+<script>
+let synth = window.speechSynthesis;
+
+// 🔥 DETECTOR NMP (real o fallback)
+function getState(){
+
+  // Si existe NMP real
+  if(window.NMP && window.NMP.state){
+    const s = window.NMP.state;
+
+    return {
+      name: "NMP real",
+      rate: 0.7 + (s.speed || 0.5),
+      pitch: 0.7 + (s.tension || 0.5)
+    };
+  }
+
+  // fallback (simulado)
+  const t = Date.now()*0.001;
+
+  return {
+    name: "simulado",
+    rate: 0.8 + Math.sin(t)*0.4,
+    pitch: 0.8 + Math.cos(t)*0.4
+  };
+}
+
+function speak(){
+  stop();
+
+  const text = document.getElementById("text").value;
+  const state = getState();
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "es-ES";
+
+  utter.rate = state.rate;
+  utter.pitch = state.pitch;
+
+  const voices = synth.getVoices();
+  const es = voices.find(v => v.lang.toLowerCase().includes("es"));
+  if(es) utter.voice = es;
+
+  document.getElementById("stateLabel").textContent =
+    `Estado: ${state.name} · rate ${state.rate.toFixed(2)} · pitch ${state.pitch.toFixed(2)}`;
+
+  synth.speak(utter);
+}
+
+function stop(){
+  synth.cancel();
+}
+
+speechSynthesis.onvoiceschanged = () => {
+  synth.getVoices();
+};
+</script>
+
+</body>
+</html>
