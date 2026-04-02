@@ -158,6 +158,75 @@ function speak(){
   const text = document.getElementById("text").value;
   const state = getState();
 
+  // 🔥 DESCOMPONER TEXTO EN FRASES (RESPIRACIÓN)
+  const parts = text.split(/([.,!?])/).filter(p => p.trim() !== "");
+
+  let i = 0;
+
+  function speakNext(){
+    if(i >= parts.length) return;
+
+    let chunk = parts[i];
+    let pauseMark = parts[i+1] || "";
+
+    const utter = new SpeechSynthesisUtterance(chunk + pauseMark);
+
+    // 🔥 BASE
+    utter.lang = "es-ES";
+    utter.volume = 1;
+
+    // 🔥 VOZ DINÁMICA REAL
+    let rate = state.rate;
+    let pitch = state.pitch;
+
+    // tensión → voz más rápida y aguda
+    rate += state.raw ? state.raw.tension * 0.15 : 0;
+
+    // profundidad → voz más grave
+    pitch -= state.raw ? state.raw.depth * 0.2 : 0;
+
+    // gap → inestabilidad (micro variación)
+    const jitter = state.raw ? state.raw.gap * 0.1 : 0;
+    rate += (Math.random() - 0.5) * jitter;
+    pitch += (Math.random() - 0.5) * jitter;
+
+    utter.rate = Math.max(0.6, Math.min(1.7, rate));
+    utter.pitch = Math.max(0.6, Math.min(1.7, pitch));
+
+    // voz española si existe
+    const voices = synth.getVoices();
+    const es = voices.find(v => v.lang && v.lang.toLowerCase().includes("es"));
+    if(es) utter.voice = es;
+
+    // 🔥 RESPIRACIÓN (PAUSA ENTRE FRASES)
+    utter.onend = () => {
+      let pause = 80;
+
+      if(pauseMark.includes(".")) pause = 220;
+      if(pauseMark.includes(",")) pause = 120;
+      if(pauseMark.includes("!")) pause = 260;
+      if(pauseMark.includes("?")) pause = 260;
+
+      // más gap → más pausa (duda)
+      if(state.raw) pause += state.raw.gap * 180;
+
+      setTimeout(() => {
+        i += 2;
+        speakNext();
+      }, pause);
+    };
+
+    synth.speak(utter);
+  }
+
+  // UI
+  document.getElementById("stateLabel").textContent =
+    `Estado: ${state.name} · rate ${state.rate.toFixed(2)} · pitch
+  stop();
+
+  const text = document.getElementById("text").value;
+  const state = getState();
+
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = "es-ES";
   utter.rate = state.rate;
