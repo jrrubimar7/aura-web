@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#0b1020" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>AURA ∞.Ω · build index1.07</title>
+<meta name="aura-build" content="index1.07" />
+<style>
+  :root{
+    --bg:#f7f8fb; --panel:#ffffff; --line:#e5e7eb; --text:#111827; --muted:#6b7280;
+    --acc:#2563eb; --acc-2:#1d4ed8; --good:#10b981; --bad:#ef4444; --soft:#eff6ff;
+    --shadow:0 8px 30px rgba(0,0,0,.08); --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  #app{display:flex;flex-direction:column;height:100dvh}
+  #topbar{display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .orb{width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#93c5fd,#2563eb 55%,#1e3a8a);box-shadow:0 0 22px rgba(37,99,235,.32);flex:0 0 auto}
+  .title{font-weight:800;letter-spacing:.16em;color:var(--acc);font-size:.9rem}
+  .grow{flex:1}
+  .chip{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:999px;padding:7px 11px;font-size:.72rem;font-weight:700;cursor:pointer}
+  .chip.on{background:var(--soft);border-color:#bfdbfe;color:var(--acc)}
+  #env{padding:6px 14px;border-bottom:1px solid var(--line);font-size:.7rem;color:var(--muted);background:#fff}
+  #chat{flex:1;overflow:auto;padding:16px 14px 10px;display:flex;flex-direction:column;gap:10px}
+  .msg{display:flex;gap:8px;align-items:flex-start}
+  .msg.user{justify-content:flex-end}
+  .bubble{max-width:86%;padding:12px 14px;border-radius:18px;line-height:1.6;box-shadow:var(--shadow);background:#fff;border:1px solid var(--line);white-space:pre-wrap;word-break:break-word}
+  .msg.user .bubble{background:var(--acc);color:#fff;border:none;border-radius:18px 6px 18px 18px;box-shadow:0 6px 20px rgba(37,99,235,.24)}
+  .meta{font-size:.68rem;color:var(--muted);margin-top:4px;display:flex;gap:6px;align-items:center}
+  .aura-actions{display:flex;gap:6px;margin-top:6px}
+  .tiny{border:none;background:transparent;color:var(--muted);font-size:.78rem;cursor:pointer;padding:4px 6px;border-radius:8px}
+  .tiny:active{background:var(--soft);color:var(--acc)}
+  .typing{display:inline-flex;gap:5px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 12px;box-shadow:var(--shadow)}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--acc);display:block;opacity:.25;animation:blink 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.16s}.typing i:nth-child(3){animation-delay:.32s}
+  @keyframes blink{0%,100%{opacity:.2;transform:scale(.8)}50%{opacity:1;transform:scale(1.12)}}
+  #composer{padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--line)}
+  .row{display:flex;align-items:flex-end;gap:8px;background:#f3f4f6;border:1px solid var(--line);border-radius:24px;padding:6px}
+  #inp{flex:1;min-height:40px;max-height:120px;resize:none;border:none;background:transparent;outline:none;font:inherit;color:var(--text);padding:8px 10px;line-height:1.5}
+  .iconbtn{width:38px;height:38px;border:none;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .iconbtn:active{transform:scale(.94)}
+  .iconbtn.on{background:var(--soft);color:var(--acc)}
+  .iconbtn.rec{background:#fff1f2;color:var(--bad)}
+  #send{width:38px;height:38px;border:none;border-radius:50%;background:var(--acc);color:#fff;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(37,99,235,.25)}
+  #send:active{background:var(--acc-2);transform:scale(.95)}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;background:rgba(17,24,39,.92);color:#fff;border-radius:999px;padding:10px 14px;font-size:.74rem;display:none;z-index:1000}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="orb"></div>
+    <div class="title">AURA ∞.Ω</div>
+    <div class="grow"></div>
+    <button class="chip" id="agentbtn">AURA</button>
+    <button class="chip" id="modelbtn">MODEL</button>
+    <button class="chip" id="keybtn">KEY</button>
+    <button class="chip" id="clear">LIMPIAR</button>
+    <button class="chip" id="export">EXPORT</button>
+    <button class="chip" id="conv">CONV</button>
+    <button class="chip" id="mute">VOICE</button>
+  </div>
+  <div id="env">index1.07 · cleanroom minimal</div>
+  <div id="chat"></div>
+  <div id="composer">
+    <div class="row">
+      <button class="iconbtn" id="mic" aria-label="Micrófono">🎙️</button>
+      <textarea id="inp" placeholder="Habla o escribe."></textarea>
+      <button id="send" aria-label="Enviar">➤</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const BUILD = 'index1.07';
+const STORAGE_KEY = 'aura_state_v1';
+const AGENTS = {
+  aura: {label:'AURA', instructions:'Eres AURA ∞.Ω. Tu nombre en esta app es AURA. No digas que eres ChatGPT ni OpenAI ni un modelo externo salvo que el usuario pregunte explícitamente por el sistema técnico. Responde con claridad, naturalidad, cercanía y brevedad. No uses JSON. No uses markdown innecesario.'},
+  research: {label:'RESEARCH', instructions:'Eres AURA ∞.Ω en modo RESEARCH. Tu identidad sigue siendo AURA dentro de esta app. No digas que eres ChatGPT ni OpenAI salvo pregunta técnica explícita. Responde como asistente de investigación: preciso, claro, estructurado y útil. No uses JSON. No uses markdown innecesario.'},
+  creative: {label:'CREATIVE', instructions:'Eres AURA ∞.Ω en modo CREATIVE. Tu identidad sigue siendo AURA dentro de esta app. No digas que eres ChatGPT ni OpenAI salvo pregunta técnica explícita. Responde de forma creativa, elegante y expresiva, pero clara. No uses JSON. No uses markdown innecesario.'},
+  code: {label:'CODE', instructions:'Eres AURA ∞.Ω en modo CODE. Tu identidad sigue siendo AURA dentro de esta app. No digas que eres ChatGPT ni OpenAI salvo pregunta técnica explícita. Responde como asistente técnico y de programación: concreto, correcto y práctico. No uses JSON. No uses markdown innecesario.'}
+};
+const STATE = {busy:false, muted:false, convMode:false, speaking:false, listening:false, activeUtterance:null, history:[], agent:'aura', model:'gpt-4.1-mini'};
+
+function saveState(){
+  try{
+    const payload = {
+      muted: !!STATE.muted,
+      convMode: !!STATE.convMode,
+      agent: STATE.agent || 'aura',
+      model: STATE.model || 'gpt-4.1-mini',
+      history: Array.isArray(STATE.history) ? STATE.history.slice(-60) : []
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }catch(e){}
+}
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return;
+    const s = JSON.parse(raw);
+    STATE.muted = !!s.muted;
+    STATE.convMode = !!s.convMode;
+    STATE.history = Array.isArray(s.history) ? s.history.slice(-60) : [];
+    STATE.agent = (s.agent && AGENTS[s.agent]) ? s.agent : 'aura';
+    STATE.model = s.model || 'gpt-4.1-mini';
+  }catch(e){}
+}
+function $(id){ return document.getElementById(id); }
+function toast(msg){ const el=$('toast'); el.textContent=String(msg||''); el.style.display='block'; clearTimeout(el._t); el._t=setTimeout(()=>el.style.display='none',1800); }
+function scrollChat(){ const c=$('chat'); c.scrollTop=c.scrollHeight; }
+function normalizeAuraResponse(txt){
+  if(txt==null) return '';
+  txt=String(txt).trim();
+  try{
+    const j=JSON.parse(txt);
+    if(j&&typeof j==='object'){
+      return j.respuesta||j.text||j.reply||j.response||j.message||j.content||j.answer||j.output||(j.payload&&j.payload.text)||txt;
+    }
+  }catch(e){}
+  return txt;
+}
+function addMsg(role,text,agentLabel=null){
+  const chat=$('chat');
+  const wrap=document.createElement('div');
+  wrap.className='msg '+role;
+  const bubble=document.createElement('div');
+  bubble.className='bubble';
+  bubble.textContent=text;
+  wrap.appendChild(bubble);
+  if(role==='aura'){
+    const meta=document.createElement('div');
+    meta.className='meta';
+    meta.textContent = agentLabel || (AGENTS[STATE.agent] && AGENTS[STATE.agent].label) || 'AURA';
+    const actions=document.createElement('div');
+    actions.className='aura-actions';
+    const copy=document.createElement('button');
+    copy.className='tiny';
+    copy.textContent='⧉';
+    copy.onclick=()=>{
+      navigator.clipboard.writeText(text||'');
+      toast('Copiado');
+    };
+    actions.appendChild(copy);
+    const play=document.createElement('button');
+    play.className='tiny';
+    play.textContent='▶';
+    play.onclick=async()=>{
+      if(STATE.muted){
+        toast('VOICE está en mute');
+        return;
+      }
+      if(STATE.speaking){ pauseResumeTTS(play);} else { await speakText(text, play);}
+    };
+    actions.appendChild(play);
+    bubble.appendChild(document.createElement('br'));
+    bubble.appendChild(meta);
+    bubble.appendChild(actions);
+  }
+  chat.appendChild(wrap);
+  scrollChat();
+}
+function showTyping(){
+  hideTyping();
+  const chat=$('chat');
+  const wrap=document.createElement('div');
+  wrap.className='msg aura';
+  wrap.id='typing-indicator';
+  const bubble=document.createElement('div');
+  bubble.className='typing';
+  bubble.innerHTML='<i></i><i></i><i></i>';
+  wrap.appendChild(bubble);
+  chat.appendChild(wrap);
+  scrollChat();
+}
+function hideTyping(){ const t=$('typing-indicator'); if(t) t.remove(); }
+function setMute(on){ STATE.muted=!!on; $('mute').classList.toggle('on', !STATE.muted); $('mute').textContent=STATE.muted?'MUTE':'VOICE'; saveState(); }
+function setConv(on){ STATE.convMode=!!on; $('conv').classList.toggle('on', STATE.convMode); $('conv').textContent=STATE.convMode?'CONV ON':'CONV'; saveState(); }
+function setMicUI(on){ $('mic').classList.toggle('rec', !!on); }
+
+async function fetchOpenAIText(messages){
+  const key=(localStorage.getItem('a_openaikey')||'').trim();
+  if(!key) throw new Error('Falta OpenAI key (a_openaikey)');
+  const input=messages.map(m=>({role:m.role==='assistant'?'assistant':'user',content:[{type:m.role==='assistant'?'output_text':'input_text',text:String(m.content||'')}]}));
+  const agentCfg = AGENTS[STATE.agent] || AGENTS.aura;
+  const body={model:STATE.model,instructions:agentCfg.instructions,input,max_output_tokens:700};
+  const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok) throw new Error((d&&d.error&&d.error.message)||('HTTP '+r.status));
+  let out='';
+  if(typeof d.output_text==='string' && d.output_text.trim()) out=d.output_text;
+  if(!out && Array.isArray(d.output)){ d.output.forEach(item=>{ if(item&&Array.isArray(item.content)){ item.content.forEach(c=>{ if(c&&typeof c.text==='string') out+=c.text; }); } }); }
+  return normalizeAuraResponse(out||'');
+}
+function buildMessages(userText){ return [...STATE.history.slice(-10), {role:'user', content:userText}]; }
+
+async function sendManual(explicitText){
+  const inp=$('inp');
+  const userText=String(explicitText!=null?explicitText:inp.value).trim();
+  if(!userText||STATE.busy) return false;
+  STATE.busy=true;
+  STATE.history.push({role:'user', content:userText});
+  if(explicitText==null) inp.value='';
+  addMsg('user', userText);
+  showTyping();
+  try{
+    const answer=await fetchOpenAIText(buildMessages(userText));
+    hideTyping();
+    const usedAgentLabel = (AGENTS[STATE.agent] && AGENTS[STATE.agent].label) || 'AURA';
+    addMsg('aura', answer, usedAgentLabel);
+    const usedAgentLabelForHistory = (AGENTS[STATE.agent] && AGENTS[STATE.agent].label) || 'AURA';
+    STATE.history.push({role:'assistant', content:answer, agentLabel: usedAgentLabelForHistory});
+    saveState();
+    if(!STATE.muted) await speakText(answer);
+    if(STATE.convMode) setTimeout(startSTT, 700);
+    return true;
+  }catch(e){
+    hideTyping();
+    addMsg('aura', 'Error: '+e.message);
+    toast('Error');
+    return false;
+  }finally{
+    STATE.busy=false;
+  }
+}
+
+function stopTTS(){ try{ speechSynthesis.cancel(); }catch(e){} STATE.speaking=false; STATE.activeUtterance=null; }
+async function speakText(text, btn=null){
+  if(STATE.muted) return false;
+  stopTTS();
+  const msg=new SpeechSynthesisUtterance(String(text||''));
+  msg.lang='es-ES';
+  msg.rate=1;
+  msg.pitch=1;
+  STATE.speaking=true;
+  STATE.activeUtterance=msg;
+  if(btn) btn.textContent='⏸';
+  return await new Promise(resolve=>{
+    msg.onend=()=>{ STATE.speaking=false; STATE.activeUtterance=null; if(btn) btn.textContent='▶'; resolve(true); };
+    msg.onerror=()=>{ STATE.speaking=false; STATE.activeUtterance=null; if(btn) btn.textContent='▶'; resolve(false); };
+    try{ speechSynthesis.resume(); speechSynthesis.speak(msg); }catch(e){ STATE.speaking=false; STATE.activeUtterance=null; if(btn) btn.textContent='▶'; resolve(false); }
+  });
+}
+function pauseResumeTTS(btn=null){
+  if(!STATE.activeUtterance) return;
+  try{
+    if(speechSynthesis.paused){ speechSynthesis.resume(); if(btn) btn.textContent='⏸'; }
+    else { speechSynthesis.pause(); if(btn) btn.textContent='▶'; }
+  }catch(e){}
+}
+
+function hasNativeSTT(){
+  try{
+    return !!(window.AURA_NATIVE && typeof window.AURA_NATIVE.startSTT==='function' && typeof window.AURA_NATIVE.hasAndroid==='function' && window.AURA_NATIVE.hasAndroid());
+  }catch(e){ return false; }
+}
+function getSR(){ return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
+let activeRec=null;
+let activeToken=0;
+function stopSTT(){
+  activeToken++;
+  STATE.listening=false;
+  setMicUI(false);
+  try{
+    if(activeRec){
+      activeRec.onresult=null; activeRec.onerror=null; activeRec.onend=null; activeRec.onstart=null;
+      activeRec.abort();
+    }
+  }catch(e){}
+  activeRec=null;
+}
+async function startNativeSTTOnce(){
+  if(!hasNativeSTT()){ toast('STT nativo no disponible'); return false; }
+  STATE.listening=true; setMicUI(true); toast('STT nativo…');
+  try{ window.AURA_NATIVE.startSTT(); return true; }catch(e){ STATE.listening=false; setMicUI(false); toast('Error STT nativo'); return false; }
+}
+async function startWebSpeechSTT(opts={}){
+  const SR=getSR();
+  if(!SR){ toast('SpeechRecognition no disponible'); return false; }
+  stopSTT();
+  const token=++activeToken;
+  const rec=new SR();
+  activeRec=rec;
+  rec.lang='es-ES';
+  rec.continuous=!!opts.continuous;
+  rec.interimResults=false;
+  rec.maxAlternatives=1;
+  rec.onstart=function(){ if(token!==activeToken) return; STATE.listening=true; setMicUI(true); toast(opts.continuous?'Conversación ON':'Mic ON'); };
+  rec.onerror=function(e){ if(token!==activeToken) return; STATE.listening=false; setMicUI(false); const code=(e&&e.error)||'error'; toast('STT: '+code); if(STATE.convMode && opts.continuous && code!=='not-allowed' && code!=='service-not-allowed'){ setTimeout(()=>{ if(token===activeToken) startSTT(); },1200); } };
+  rec.onend=function(){ if(token!==activeToken) return; STATE.listening=false; setMicUI(false); if(STATE.convMode && opts.continuous && !STATE.busy && !STATE.speaking){ setTimeout(()=>{ if(token===activeToken) startSTT(); },900); } };
+  rec.onresult=async function(e){ if(token!==activeToken) return; let txt=''; try{ txt=e.results[0][0].transcript||''; }catch(err){} txt=String(txt||'').trim(); stopSTT(); if(!txt) return; await sendManual(txt); };
+  try{ rec.start(); return true; }catch(e){ STATE.listening=false; setMicUI(false); toast('Mic no arrancó'); return false; }
+}
+async function startSTT(){ if(STATE.busy||STATE.speaking) return false; if(hasNativeSTT()) return startNativeSTTOnce(); return startWebSpeechSTT({continuous:STATE.convMode}); }
+function toggleMic(){ if(STATE.listening){ stopSTT(); return; } setConv(false); startSTT(); }
+function toggleConversation(){ if(STATE.convMode){ setConv(false); stopSTT(); return; } setConv(true); startSTT(); }
+
+window.onNativeSTT=async function(text){ STATE.listening=false; setMicUI(false); text=String(text||'').trim(); if(!text) return; await sendManual(text); };
+window.onNativeSTTError=function(msg){ STATE.listening=false; setMicUI(false); toast('STT nativo: '+(msg||'error')); };
+
+(function(){
+  function has(name){ try{return typeof Android!=='undefined' && Android && typeof Android[name]==='function';}catch(e){return false;} }
+  function call(name,args){ try{ if(!has(name)) return false; Android[name].apply(Android,args||[]); return true; }catch(e){ console.error('Android bridge error:',name,e); return false; } }
+  window.AURA_NATIVE={ hasAndroid:function(){ return has('startSTT')||has('speak')||has('notify'); }, startSTT:function(){ return call('startSTT'); }, speak:function(text){ return call('speak',[String(text||'')]); }, notify:function(title,body){ return call('notify',[String(title||'AURA ∞.Ω'),String(body||'')]); }, stopSpeak:function(){ return call('stopSpeak'); } };
+})();
+
+
+function clearChat(){
+  STATE.history = [];
+  saveState();
+  $('chat').innerHTML = '';
+  addMsg('aura', 'Chat limpiado.', 'SYSTEM');
+}
+function exportChat(){
+  try{
+    const lines = [];
+    const now = new Date().toISOString();
+    lines.push('AURA ∞.Ω');
+    lines.push('Build: index1.07');
+    lines.push('Exportado: ' + now);
+    lines.push('');
+    (STATE.history || []).forEach(m=>{
+      const role = m.role === 'assistant' ? 'AURA' : 'JR';
+      lines.push(role + ': ' + String(m.content || ''));
+      lines.push('');
+    });
+    const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'aura-chat-index1.07.txt';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    toast('Chat exportado');
+  }catch(e){
+    toast('Error exportando');
+  }
+}
+
+
+function hasOpenAIKey(){
+  try{ return !!(localStorage.getItem('a_openaikey') || '').trim(); }catch(e){ return false; }
+}
+function updateEnv(){
+  const ag = AGENTS[STATE.agent] || AGENTS.aura;
+  const ok = hasOpenAIKey();
+  $('env').textContent = 'index1.07 · cleanroom + key + agents fixed · ' + ag.label + ' · ' + (ok ? 'OpenAI key cargada' : 'Sin OpenAI key');
+}
+function updateKeyUI(){
+  const b = $('keybtn');
+  if(!b) return;
+  const ok = hasOpenAIKey();
+  b.classList.toggle('on', ok);
+  b.textContent = ok ? 'KEY OK' : 'KEY';
+  $('env').textContent = 'index1.07 · cleanroom minimal + tools + key · ' + (ok ? 'OpenAI key cargada' : 'Sin OpenAI key');
+}
+function manageKey(){
+  const current = (localStorage.getItem('a_openaikey') || '').trim();
+  const value = window.prompt(
+    current
+      ? 'OpenAI key actual detectada.\n\nPega una nueva key para reemplazarla.\nDeja vacío y acepta para borrar la actual.'
+      : 'Pega tu OpenAI key.\n\nSe guardará en este navegador.',
+    current
+  );
+  if(value === null) return;
+  const trimmed = String(value || '').trim();
+  if(trimmed){
+    localStorage.setItem('a_openaikey', trimmed);
+    toast('Key guardada');
+  }else{
+    localStorage.removeItem('a_openaikey');
+    toast('Key eliminada');
+  }
+  updateKeyUI();
+}
+
+
+function updateAgentUI(){
+  const b = $('agentbtn');
+  if(!b) return;
+  const ag = AGENTS[STATE.agent] || AGENTS.aura;
+  b.textContent = ag.label;
+  updateEnv();
+}
+
+function updateModelUI(){
+  const b = $('modelbtn');
+  if(!b) return;
+  b.textContent = STATE.model.replace('gpt-','').replace('-mini','m');
+  updateEnv();
+}
+function manageModel(){
+  const msg = [
+    'Elige modelo:',
+    '',
+    '1. gpt-4.1-mini',
+    '2. gpt-4.1',
+    '3. gpt-4o-mini',
+    '',
+    'Escribe nombre exacto'
+  ].join('\n');
+  const v = window.prompt(msg, STATE.model);
+  if(v===null) return;
+  const val = String(v||'').trim();
+  if(!val) return;
+  STATE.model = val;
+  saveState();
+  updateModelUI();
+  toast('Modelo: ' + val);
+}
+
+function manageAgent(){
+  const current = STATE.agent || 'aura';
+  const msg = [
+    'Elige agente:',
+    '',
+    '1. AURA',
+    '2. RESEARCH',
+    '3. CREATIVE',
+    '4. CODE',
+    '',
+    'Escribe: aura / research / creative / code'
+  ].join('\n');
+  const value = window.prompt(msg, current);
+  if(value === null) return;
+  const v = String(value || '').trim().toLowerCase();
+  if(!AGENTS[v]){
+    toast('Agente no válido');
+    return;
+  }
+  STATE.agent = v;
+  saveState();
+  updateAgentUI();
+  toast('Agente: ' + AGENTS[v].label);
+}
+
+function wireUI(){
+  $('send').onclick=()=>sendManual();
+  $('inp').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendManual(); } });
+  $('mic').onclick=toggleMic;
+  $('agentbtn').onclick=manageAgent;
+  $('modelbtn').onclick=manageModel;
+  $('keybtn').onclick=manageKey;
+  $('clear').onclick=clearChat;
+  $('export').onclick=exportChat;
+  $('conv').onclick=toggleConversation;
+  $('mute').onclick=()=>{ setMute(!STATE.muted); if(STATE.muted) stopTTS(); };
+  const unlock=()=>{ try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); speechSynthesis.cancel(); }catch(e){} document.removeEventListener('pointerdown', unlock, true); };
+  document.addEventListener('pointerdown', unlock, true);
+}
+window.__AURA_DEBUG__={ build:BUILD, state:()=>JSON.parse(JSON.stringify(STATE)), hasNativeSTT:()=>hasNativeSTT(), hasSpeechRecognition:()=>!!getSR(), startSTT:()=>startSTT(), stopSTT:()=>stopSTT() };
+loadState();
+wireUI();
+updateAgentUI();
+updateModelUI();
+updateKeyUI();
+setMute(STATE.muted);
+setConv(STATE.convMode);
+if(Array.isArray(STATE.history) && STATE.history.length){
+  STATE.history.forEach(m => {
+    if(m && (m.role === 'user' || m.role === 'assistant')){
+      const label = m.role === 'assistant' ? (m.agentLabel || 'AURA') : null;
+      addMsg(m.role === 'assistant' ? 'aura' : 'user', String(m.content || ''), label);
+    }
+  });
+} else {
+  addMsg('aura', 'AURA cleanroom lista. Identidad base cargada.', 'SYSTEM');
+}
+</script>
+</body>
+</html>
