@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#00050f"/>
+<title>AURA Lite Boot Probe</title>
+<style>
+:root{
+  --bg:#f8f9fb;
+  --acc:#2563eb;
+  --txt:#111827;
+  --mut:#6b7280;
+  --ln:#e5e7eb;
+  --glass:rgba(255,255,255,.92);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#aura-splash{
+  position:fixed;inset:0;z-index:9999;background:#f7f8fb;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;
+  transition:opacity .4s ease;
+}
+.orb{
+  width:84px;height:84px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#7eb8ff,#1a56db 60%,#0a2563);
+  box-shadow:0 0 40px rgba(37,99,235,.28);
+  animation:breath 1.8s ease-in-out infinite;
+}
+.brand{font-size:.8rem;letter-spacing:.22em;color:#94a3b8;text-transform:uppercase}
+@keyframes breath{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+
+#app{
+  display:none; height:100%;
+  flex-direction:column;
+}
+#hud{
+  padding:14px 16px;
+  background:var(--glass);
+  border-bottom:1px solid var(--ln);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+#hud .left{display:flex;align-items:center;gap:12px}
+#hud .mini-orb{
+  width:28px;height:28px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#7eb8ff,#1a56db 60%,#0a2563);
+}
+#hud .name{font-weight:700;letter-spacing:.16em;color:var(--acc)}
+#env{font-size:.72rem;color:var(--mut)}
+#chat{
+  flex:1;overflow:auto;padding:18px 14px 110px;
+  display:flex;flex-direction:column;gap:10px;
+}
+.msg{
+  max-width:88%;padding:12px 14px;border-radius:16px;line-height:1.5;
+  box-shadow:0 1px 4px rgba(0,0,0,.05);
+}
+.msg.aura{background:#fff;border:1px solid var(--ln)}
+.msg.user{background:var(--acc);color:#fff;align-self:flex-end}
+#composer{
+  position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--ln);
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+}
+.row{display:flex;gap:8px;align-items:flex-end}
+#inp{
+  flex:1;min-height:42px;max-height:120px;resize:none;border:1.5px solid var(--ln);
+  border-radius:18px;padding:10px 12px;font:inherit;outline:none;background:#fff;
+}
+#send{
+  width:42px;height:42px;border:none;border-radius:50%;background:var(--acc);color:#fff;
+  font-size:18px;font-weight:700;
+}
+#setup{
+  display:none;position:fixed;inset:0;z-index:300;background:#f8f9fb;
+  flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;
+}
+#setup.show{display:flex}
+.setup-card{
+  width:min(92vw,340px);background:#fff;border:1px solid var(--ln);border-radius:18px;
+  padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.06);
+}
+.setup-title{font-size:1.05rem;font-weight:700;letter-spacing:.08em;color:var(--acc);text-align:center}
+.setup-sub{font-size:.84rem;line-height:1.55;color:var(--mut);text-align:center}
+#akey{
+  width:100%;border:1.5px solid var(--ln);border-radius:12px;padding:12px 14px;font:inherit;
+}
+#go{
+  width:100%;border:none;border-radius:12px;background:var(--acc);color:#fff;padding:13px 14px;font-weight:700;
+}
+#diag{
+  position:fixed;left:8px;right:8px;bottom:84px;z-index:20000;
+  background:rgba(17,24,39,.96);color:#fff;border-radius:12px;padding:10px 12px;
+  font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+  white-space:pre-wrap;word-break:break-word;max-height:34vh;overflow:auto;
+}
+.hidden{display:none!important}
+</style>
+<script>
+(function(){
+  function diag(msg){
+    try{
+      var box = document.getElementById('diag');
+      if(!box) return;
+      var line = '[' + new Date().toLocaleTimeString() + '] ' + String(msg);
+      box.textContent += (box.textContent ? '\n' : '') + line;
+    }catch(e){}
+  }
+  window.__diag = diag;
+  window.addEventListener('error', function(ev){
+    diag('ERROR ' + (ev.message || 'error') + ' @ ' + (ev.lineno || '?'));
+  });
+  window.addEventListener('unhandledrejection', function(ev){
+    var r = ev.reason;
+    diag('PROMISE ' + (r && r.message ? r.message : String(r || 'promise')));
+  });
+
+  function hasKey(){
+    try{
+      return !!(
+        localStorage.getItem('a_key') ||
+        localStorage.getItem('a_geminikey') ||
+        localStorage.getItem('a_claudekey') ||
+        localStorage.getItem('a_orkey')
+      );
+    }catch(e){ return false; }
+  }
+
+  function showSetup(){
+    var app = document.getElementById('app');
+    var setup = document.getElementById('setup');
+    if(app) app.style.display = 'flex';
+    if(setup) setup.classList.add('show');
+    diag('setup visible');
+  }
+
+  function showApp(){
+    var splash = document.getElementById('aura-splash');
+    var app = document.getElementById('app');
+    var setup = document.getElementById('setup');
+    if(setup) setup.classList.remove('show');
+    if(app) app.style.display = 'flex';
+    if(splash){
+      splash.style.opacity = '0';
+      setTimeout(function(){
+        try{ splash.remove(); }catch(e){}
+      }, 450);
+    }
+    try{
+      var chat = document.getElementById('chat');
+      if(chat && !chat.dataset.seeded){
+        chat.dataset.seeded = '1';
+        var el = document.createElement('div');
+        el.className = 'msg aura';
+        el.textContent = 'AURA Lite Probe arrancó correctamente.';
+        chat.appendChild(el);
+      }
+    }catch(e){}
+    diag('app visible');
+  }
+
+  function boot(){
+    diag('boot start');
+    if(hasKey()) showApp();
+    else showSetup();
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    diag('DOMContentLoaded');
+    var go = document.getElementById('go');
+    if(go){
+      go.addEventListener('click', function(){
+        var akey = document.getElementById('akey');
+        var v = akey ? String(akey.value || '').trim() : '';
+        if(v){
+          try{
+            if(v.startsWith('AIza')) localStorage.setItem('a_geminikey', v);
+            else localStorage.setItem('a_key', v);
+            diag('key guardada');
+          }catch(e){}
+        }
+        showApp();
+      });
+    }
+
+    var send = document.getElementById('send');
+    if(send){
+      send.addEventListener('click', function(){
+        var inp = document.getElementById('inp');
+        var chat = document.getElementById('chat');
+        var msg = inp ? String(inp.value || '').trim() : '';
+        if(!msg || !chat) return;
+        var user = document.createElement('div');
+        user.className = 'msg user';
+        user.textContent = msg;
+        chat.appendChild(user);
+
+        var aura = document.createElement('div');
+        aura.className = 'msg aura';
+        aura.textContent = 'Recibido. Este probe confirma que el boot base, el DOM y la interacción mínima funcionan.';
+        chat.appendChild(aura);
+        inp.value = '';
+        chat.scrollTop = chat.scrollHeight;
+        diag('send ok');
+      });
+    }
+
+    setTimeout(boot, 400);
+  });
+
+  window.addEventListener('load', function(){
+    diag('load');
+  });
+})();
+</script>
+</head>
+<body>
+<div id="aura-splash">
+  <div class="orb"></div>
+  <div class="brand">AURA ∞.Ω</div>
+</div>
+
+<div id="setup">
+  <div class="setup-card">
+    <div class="setup-title">AURA LITE PROBE</div>
+    <div class="setup-sub">Prueba ultraligera de arranque. Si esto entra, el cuello de botella principal del index grande es peso y/o runtime interno, no el hosting.</div>
+    <input id="akey" type="password" placeholder="API opcional"/>
+    <button id="go">ENTRAR</button>
+  </div>
+</div>
+
+<div id="app">
+  <div id="hud">
+    <div class="left">
+      <div class="mini-orb"></div>
+      <div class="name">AURA</div>
+    </div>
+    <div id="env">lite boot probe</div>
+  </div>
+  <div id="chat"></div>
+  <div id="composer">
+    <div class="row">
+      <textarea id="inp" placeholder="Escribe algo..."></textarea>
+      <button id="send">↑</button>
+    </div>
+  </div>
+</div>
+
+<div id="diag"></div>
+</body>
+</html>
