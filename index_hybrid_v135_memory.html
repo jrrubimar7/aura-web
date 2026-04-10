@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AURA v13.5 memoria conversacional</title>
+</head>
+<body>
+<script>
+// v13.5 = añade memoria conversacional real (últimos mensajes)
+
+async function sendToGemini(messages, apiKey){
+  const url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent?key=" + apiKey;
+
+  const contents = messages.map(m => ({
+    role: "user",
+    parts: [{ text: m.role.toUpperCase()+": "+m.content }]
+  }));
+
+  const res = await fetch(url,{
+    method:"POST",
+    headers:{ "Content-Type":"application/json"},
+    body: JSON.stringify({ contents })
+  });
+
+  const data = await res.json();
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sin respuesta";
+}
+
+// ejemplo memoria
+let memory = [];
+
+async function send(msg, apiKey){
+  memory.push({role:"user", content:msg});
+  const last = memory.slice(-6); // límite memoria
+  const reply = await sendToGemini(last, apiKey);
+  memory.push({role:"assistant", content:reply});
+  console.log(reply);
+}
+</script>
+AURA v13.5 listo
+</body>
+</html>
