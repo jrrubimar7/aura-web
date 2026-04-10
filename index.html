@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AURA MIN TEST</title>
+</head>
+<body style="background:#000;color:#0f0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;">
+
+<div id="ok">BOOT OK</div>
+
+<script>
+console.log("JS OK");
+
+setTimeout(function(){
+  document.getElementById('ok').innerText = "JS RUNNING OK";
+}, 1000);
+</script>
+
+</body>
+</html>
