@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AURA SW killer</title>
+<style>
+html,body{margin:0;height:100%;font-family:system-ui;background:#0b1020;color:#fff}
+.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:16px;text-align:center}
+button{background:#2563eb;color:#fff;border:none;border-radius:12px;padding:14px 18px;font-size:16px;font-weight:700}
+#log{white-space:pre-wrap;word-break:break-word;background:rgba(255,255,255,.08);padding:12px;border-radius:12px;max-width:680px;width:100%}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AURA SW KILLER</h1>
+  <div>Abre esta página en Chrome normal y pulsa el botón.</div>
+  <button id="kill">DESREGISTRAR SERVICE WORKERS</button>
+  <div id="log">Esperando...</div>
+</div>
+<script>
+(function(){
+  var log = document.getElementById('log');
+  function write(msg){ log.textContent += "\n" + msg; }
+
+  async function killSW(){
+    log.textContent = 'Iniciando...';
+    try{
+      if(!('serviceWorker' in navigator)){
+        write('Service Worker no soportado en este navegador.');
+        return;
+      }
+      const regs = await navigator.serviceWorker.getRegistrations();
+      write('Registros encontrados: ' + regs.length);
+      for(const reg of regs){
+        try{
+          write('Scope: ' + reg.scope);
+          const ok = await reg.unregister();
+          write('unregister() -> ' + ok);
+        }catch(e){
+          write('Error unregister: ' + (e && e.message ? e.message : e));
+        }
+      }
+      try{
+        const keys = await caches.keys();
+        write('Caches encontradas: ' + keys.length);
+        for(const k of keys){
+          const ok = await caches.delete(k);
+          write('cache delete ' + k + ' -> ' + ok);
+        }
+      }catch(e){
+        write('Error caches: ' + (e && e.message ? e.message : e));
+      }
+      write('Listo. Cierra Chrome por completo y vuelve a abrir AURA con ?v=9000');
+    }catch(e){
+      write('Fallo general: ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  document.getElementById('kill').addEventListener('click', killSW);
+})();
+</script>
+</body>
+</html>
