@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#00050f"/>
+<title>AURA v13.4 Gemini 2.5 Flash-Lite payload fix</title>
+<style>
+:root{
+  --bg:#f7f8fb; --txt:#111827; --mut:#94a3b8; --line:#e5e7eb;
+  --blue:#2563eb; --pur:#7c3aed; --green:#16a34a; --amber:#d97706;
+  --sans:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --input-h: 78px;
+  --diag-h: 92px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{
+  margin:0; width:100%; height:100%;
+  background:var(--bg); color:var(--txt); font-family:var(--sans);
+  overflow:hidden;
+}
+button,input,textarea{font:inherit}
+#aura-splash{
+  position:fixed; inset:0; z-index:99999; background:var(--bg);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px;
+  transition:opacity .45s ease;
+}
+#aura-splash .orb{
+  width:82px; height:82px; border-radius:50%;
+  background:radial-gradient(circle at 35% 35%, #8ec5ff, var(--blue) 55%, #173a8b);
+  box-shadow:0 0 40px rgba(37,99,235,.35);
+  animation:pulse 1.9s ease-in-out infinite;
+}
+#aura-splash .txt{font-size:.72rem; letter-spacing:.26em; color:#a0aec0; text-transform:uppercase}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+
+#setup{
+  position:fixed; inset:0; z-index:300; background:var(--bg);
+  display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+  padding:28px;
+}
+#setup.show{display:flex}
+.su-core{
+  width:64px; height:64px; border-radius:50%;
+  background:radial-gradient(circle at 35% 35%, #8ec5ff, var(--blue) 55%, #173a8b);
+  box-shadow:0 0 28px rgba(37,99,235,.28);
+}
+.su-title{font-size:1.45rem; font-weight:700; letter-spacing:.24em; color:var(--blue)}
+.su-sub{font-size:.68rem; color:var(--mut); text-align:center; line-height:1.7; max-width:340px}
+.su-inp{
+  width:100%; max-width:320px; background:#fff; border:1.5px solid var(--line);
+  border-radius:14px; padding:13px 14px; outline:none;
+}
+.su-row{display:flex; gap:10px; width:100%; max-width:320px}
+.su-btn{
+  flex:1; border:none; border-radius:14px; padding:14px 16px;
+  background:var(--blue); color:#fff; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+}
+.su-btn.alt{background:#fff; color:#334155; border:1px solid var(--line); text-transform:none}
+.su-state{font-size:.7rem; color:#64748b; text-align:center; max-width:320px}
+
+#app{
+  display:none; flex-direction:column;
+  height:100vh; min-height:100vh;
+}
+#app.visible{display:flex}
+
+#hud{
+  position:relative; z-index:10;
+  background:rgba(255,255,255,.94);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+  padding:12px 14px;
+}
+#hud .row{display:flex; align-items:center; gap:12px}
+.hcore{
+  width:34px; height:34px; border-radius:50%;
+  background:radial-gradient(circle at 35% 35%, #8ec5ff, var(--blue) 55%, #173a8b);
+  box-shadow:0 0 18px rgba(37,99,235,.28);
+}
+.hname{font-size:.9rem; font-weight:800; letter-spacing:.24em; color:var(--blue)}
+.hmeta{margin-left:auto; display:flex; gap:10px; color:#64748b; font-size:.72rem}
+#envbar{
+  display:none; padding:7px 14px; font-size:.69rem; color:#64748b;
+  background:#f1f5f9; border-bottom:1px solid var(--line);
+}
+#topctrl{
+  display:flex; gap:8px; padding:10px 12px; background:#fff; border-bottom:1px solid var(--line);
+  overflow:auto;
+}
+.tbtn{
+  border:1px solid var(--line); background:#fff; color:#475569; border-radius:999px; padding:8px 12px;
+  font-size:.75rem; cursor:pointer; white-space:nowrap;
+}
+#agbar{
+  display:flex; gap:8px; overflow:auto; padding:10px 12px;
+  border-bottom:1px solid var(--line); background:#fff;
+}
+.atab{
+  flex:0 0 auto; border:1px solid var(--line); border-radius:999px; padding:7px 11px;
+  font-size:.74rem; color:#475569; background:#fff; cursor:pointer; user-select:none;
+}
+.atab.active{border-color:var(--blue); color:var(--blue)}
+
+#chat{
+  flex:1; min-height:0; overflow:auto;
+  padding:18px 14px calc(var(--input-h) + var(--diag-h) + 24px) 14px;
+}
+#welcome{
+  min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+  text-align:center; padding:24px;
+}
+#welcome .orb{
+  width:86px; height:86px; border-radius:50%;
+  background:radial-gradient(circle at 35% 35%, #8ec5ff, var(--blue) 55%, #173a8b);
+  box-shadow:0 0 34px rgba(37,99,235,.28);
+}
+#welcome .name{font-size:1.7rem; font-weight:700; letter-spacing:.24em; color:var(--blue)}
+#welcome .sub{max-width:340px; font-size:.78rem; line-height:1.7; color:#6b7280}
+
+.msg{
+  max-width:88%; padding:12px 14px; border-radius:16px; line-height:1.55; margin:10px 0; font-size:.92rem;
+  word-break:break-word; white-space:pre-wrap;
+}
+.msg.user{margin-left:auto; background:linear-gradient(180deg, #2f77ff, #1d4ed8); color:#fff; border-bottom-right-radius:6px}
+.msg.aura{margin-right:auto; background:#fff; border:1px solid var(--line); color:var(--txt); border-bottom-left-radius:6px}
+.msg.sys{margin-right:auto; background:#eef2ff; border:1px solid #c7d2fe; color:#3730a3; border-bottom-left-radius:6px}
+.msg.err{margin-right:auto; background:#fff1f2; border:1px solid #fecdd3; color:#9f1239; border-bottom-left-radius:6px}
+
+#inparea{
+  position:fixed;
+  left:0; right:0;
+  bottom:var(--diag-h);
+  z-index:40;
+  border-top:1px solid var(--line); background:#fff; padding:10px 12px;
+  padding-bottom:max(10px, env(safe-area-inset-bottom));
+}
+.inprow{
+  display:flex; align-items:flex-end; gap:8px; background:#f1f5f9; border:1px solid var(--line);
+  border-radius:22px; padding:4px 4px 4px 10px;
+}
+#inp{
+  flex:1; resize:none; min-height:40px; max-height:110px; border:none; background:transparent;
+  outline:none; padding:9px 0 8px; color:var(--txt)
+}
+.iattach,.imic,.isend{
+  width:38px; height:38px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+  border-radius:50%; border:none; cursor:pointer;
+}
+.iattach,.imic{background:#fff; border:1px solid var(--line); color:#475569}
+.isend{background:var(--blue); color:#fff; font-size:18px}
+.isend.busy{opacity:.65; pointer-events:none}
+
+#diag{
+  position:fixed; left:8px; right:8px; bottom:8px; z-index:50;
+  background:rgba(2,6,23,.96); color:#22c55e; border-radius:10px; padding:8px 10px;
+  font:12px/1.45 monospace; white-space:pre-wrap; word-break:break-word;
+  height:76px; overflow:auto;
+}
+.badge{font-weight:700}
+.badge.real{color:var(--green)}
+.badge.fallback{color:var(--amber)}
+
+.kb-open #diag{height:48px}
+.kb-open #inparea{bottom:56px}
+.kb-open #chat{padding-bottom:calc(var(--input-h) + 72px)}
+</style>
+</head>
+<body>
+
+<div id="aura-splash">
+  <div class="orb"></div>
+  <div class="txt">AURA ∞.Ω</div>
+</div>
+
+<div id="setup">
+  <div class="su-core"></div>
+  <div class="su-title">AURA <span style="color:var(--pur)">∞.Ω</span></div>
+  <div class="su-sub">v13.4. Payload corregido para Gemini 2.5 Flash-Lite. Sin systemInstruction.</div>
+  <input id="akey" class="su-inp" placeholder="API opcional: AIza... o cualquier otra"/>
+  <div class="su-row">
+    <button id="su-go" class="su-btn" type="button">Entrar</button>
+    <button id="su-no-key" class="su-btn alt" type="button">Sin API</button>
+  </div>
+  <div class="su-row">
+    <button id="su-save" class="su-btn alt" type="button">Guardar API</button>
+    <button id="su-forget" class="su-btn alt" type="button">Olvidar API</button>
+  </div>
+  <div id="setup-state" class="su-state">Sin clave guardada.</div>
+</div>
+
+<div id="app">
+  <div id="hud">
+    <div class="row">
+      <div class="hcore"></div>
+      <div class="hname">AURA</div>
+      <div class="hmeta">
+        <span id="m-mem">0</span>
+        <span id="m-ag">3</span>
+        <span id="m-msg">0</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="envbar">v13.4 hybrid shell · listo</div>
+
+  <div id="topctrl">
+    <button id="open-setup" class="tbtn" type="button">Cambiar API</button>
+    <button id="forget-api" class="tbtn" type="button">Olvidar API</button>
+    <button id="mode-badge" class="tbtn" type="button">Modo: fallback</button>
+  </div>
+
+  <div id="agbar">
+    <button class="atab active" type="button" data-agent="general">general</button>
+    <button class="atab" type="button" data-agent="creative">creative</button>
+    <button class="atab" type="button" data-agent="code">code</button>
+  </div>
+
+  <div id="chat">
+    <div id="welcome">
+      <div class="orb"></div>
+      <div class="name">AURA</div>
+      <div class="sub">Payload de Gemini corregido. El resto se mantiene igual.</div>
+    </div>
+  </div>
+
+  <div id="inparea">
+    <div class="inprow">
+      <button class="iattach" id="b-attach" aria-label="Adjuntar" type="button">＋</button>
+      <textarea id="inp" rows="1" placeholder="Escribe algo..."></textarea>
+      <button class="imic" id="b-imic" aria-label="Micrófono" type="button">🎙</button>
+      <button class="isend" id="b-send" aria-label="Enviar" type="button">↑</button>
+    </div>
+  </div>
+</div>
+
+<div id="diag"></div>
+
+<script>
+(function(){
+  var S = window.S = window.S || {
+    key:'',
+    geminiKey:'',
+    memory:[],
+    msgs:0,
+    agent:'general',
+    busy:false
+  };
+
+  function log(msg){
+    var box = document.getElementById('diag');
+    if(!box) return;
+    box.textContent += (box.textContent ? '\n' : '') + '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function removeSplash(){
+    var splash = document.getElementById('aura-splash');
+    if(!splash) return;
+    splash.style.opacity='0';
+    setTimeout(function(){ try{ if(splash.parentNode) splash.parentNode.removeChild(splash); }catch(e){} }, 450);
+  }
+
+  function saveState(){
+    try{
+      localStorage.setItem('aura_v134_memory', JSON.stringify(S.memory || []));
+      localStorage.setItem('aura_v134_agent', S.agent || 'general');
+    }catch(e){}
+  }
+
+  function loadState(){
+    try{
+      var mem = JSON.parse(localStorage.getItem('aura_v134_memory') || '[]');
+      if(Array.isArray(mem)) S.memory = mem;
+    }catch(e){ S.memory = []; }
+    try{
+      S.agent = localStorage.getItem('aura_v134_agent') || 'general';
+    }catch(e){ S.agent = 'general'; }
+    try{
+      S.key = localStorage.getItem('a_key') || '';
+      S.geminiKey = localStorage.getItem('a_geminikey') || '';
+    }catch(e){}
+    S.msgs = (S.memory || []).length;
+  }
+
+  function cleanAuraText(txt){
+    return String(txt || '').replace(/\r/g,'').trim();
+  }
+
+  function auraFormatText(txt){
+    return cleanAuraText(txt);
+  }
+
+  function hasGemini(){
+    var v = '';
+    try{ v = cleanAuraText(S.geminiKey || localStorage.getItem('a_geminikey') || ''); }catch(e){ v = cleanAuraText(S.geminiKey || ''); }
+    return v.indexOf('AIza') === 0;
+  }
+
+  function refreshApiState(){
+    var s = document.getElementById('setup-state');
+    var b = document.getElementById('mode-badge');
+    var mode = hasGemini() ? 'IA real' : 'fallback';
+    if(s){
+      s.textContent = hasGemini() ? 'Gemini guardada y disponible.' : 'Sin Gemini válida guardada. Puedes entrar igual.';
+    }
+    if(b){
+      b.textContent = 'Modo: ' + mode;
+      b.className = 'tbtn ' + (hasGemini() ? 'badge real' : 'badge fallback');
+    }
+  }
+
+  function updateHUD(){
+    var mm = document.getElementById('m-mem');
+    var ma = document.getElementById('m-ag');
+    var ms = document.getElementById('m-msg');
+    if(mm) mm.textContent = String((S.memory || []).length);
+    if(ma) ma.textContent = '3';
+    if(ms) ms.textContent = String(S.msgs || 0);
+    var env = document.getElementById('envbar');
+    if(env){
+      var mode = hasGemini() ? 'IA real' : 'fallback';
+      env.textContent = 'v13.4 hybrid shell · ' + (S.busy ? 'enviando...' : 'listo') + ' · agente ' + (S.agent || 'general') + ' · ' + mode;
+    }
+    refreshApiState();
+  }
+
+  function setAgent(agent){
+    S.agent = agent || 'general';
+    document.querySelectorAll('.atab').forEach(function(btn){
+      btn.classList.toggle('active', btn.dataset.agent === S.agent);
+    });
+    saveState();
+    updateHUD();
+    log('[agent] ' + S.agent);
+  }
+
+  function ensureWelcomeGone(){
+    var welcome = document.getElementById('welcome');
+    if(welcome) welcome.remove();
+  }
+
+  function appendMsg(role, txt, persist){
+    var chat = document.getElementById('chat');
+    if(!chat) return;
+    ensureWelcomeGone();
+    var d = document.createElement('div');
+    d.className = 'msg ' + (role === 'user' ? 'user' : (role === 'err' ? 'err' : (role === 'sys' ? 'sys' : 'aura')));
+    d.textContent = auraFormatText(txt);
+    chat.appendChild(d);
+    chat.scrollTop = chat.scrollHeight;
+
+    if(persist !== false){
+      S.memory.push({ role: role, content: String(txt || ''), agent: S.agent, t: Date.now() });
+      S.msgs = (S.msgs || 0) + 1;
+      updateHUD();
+      saveState();
+    }
+  }
+
+  function renderMemory(){
+    if(!S.memory || !S.memory.length) return;
+    S.memory.forEach(function(m){
+      appendMsg(m.role || 'aura', m.content || '', false);
+    });
+    S.msgs = S.memory.length;
+    updateHUD();
+  }
+
+  function localResponse(userText){
+    var agent = S.agent || 'general';
+    if(agent === 'creative'){
+      return 'Modo creative activo. He recibido: "' + userText + '". Fallback local activo porque no hay Gemini válida o la IA real no respondió.';
+    }
+    if(agent === 'code'){
+      return 'Modo code activo. He recibido: "' + userText + '". Fallback local activo; el pipeline y la shell están sanos.';
+    }
+    return 'He recibido: "' + userText + '". Fallback local activo. Guarda una Gemini AIza... para respuesta real.';
+  }
+
+  function setBusy(v){
+    S.busy = !!v;
+    var btn = document.getElementById('b-send');
+    if(btn) btn.classList.toggle('busy', S.busy);
+    updateHUD();
+  }
+
+  function buildSystemPrompt(){
+    var agent = S.agent || 'general';
+    if(agent === 'creative'){
+      return 'Eres AURA en modo creative. Responde en español con creatividad, claridad y estilo útil.';
+    }
+    if(agent === 'code'){
+      return 'Eres AURA en modo code. Responde en español con precisión técnica, pasos claros y código cuando aporte valor.';
+    }
+    return 'Eres AURA. Responde en español de forma útil, clara y concisa.';
+  }
+
+  async function sendToGemini(userText){
+    var key = '';
+    try{ key = cleanAuraText(S.geminiKey || localStorage.getItem('a_geminikey') || ''); }catch(e){ key = cleanAuraText(S.geminiKey || ''); }
+    if(!key || key.indexOf('AIza') !== 0){
+      throw new Error('no_gemini_key');
+    }
+
+    var model = 'gemini-2.5-flash-lite';
+    var url = 'https://generativelanguage.googleapis.com/v1/models/' + model + ':generateContent?key=' + encodeURIComponent(key);
+
+    var prompt = buildSystemPrompt() + "\n\nUsuario: " + userText;
+
+    var body = {
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 512
+      }
+    };
+
+    log('[ai] sending ' + model);
+    var res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if(!res.ok){
+      var t = await res.text().catch(function(){ return ''; });
+      throw new Error('gemini_http_' + res.status + (t ? ' ' + t.slice(0, 180) : ''));
+    }
+
+    var data = await res.json();
+    var txt =
+      data &&
+      data.candidates &&
+      data.candidates[0] &&
+      data.candidates[0].content &&
+      data.candidates[0].content.parts &&
+      data.candidates[0].content.parts[0] &&
+      data.candidates[0].content.parts[0].text;
+
+    txt = cleanAuraText(txt);
+    if(!txt) throw new Error('gemini_empty');
+    log('[ai] response ok');
+    return txt;
+  }
+
+  async function sendToAI(userText){
+    try{
+      return await sendToGemini(userText);
+    }catch(e){
+      var reason = e && e.message ? e.message : String(e || 'unknown');
+      log('[ai] fallback ' + reason);
+      return localResponse(userText);
+    }
+  }
+
+  async function sendNow(){
+    var inp = document.getElementById('inp');
+    var txt = cleanAuraText(inp && inp.value);
+    if(!txt || S.busy) return;
+
+    appendMsg('user', txt, true);
+    if(inp){
+      inp.value = '';
+      inp.style.height = 'auto';
+    }
+
+    setBusy(true);
+    try{
+      var out = await sendToAI(txt);
+      appendMsg('aura', out, true);
+    }catch(e){
+      appendMsg('err', 'Error en pipeline: ' + (e && e.message ? e.message : e), true);
+    }finally{
+      setBusy(false);
+    }
+  }
+
+  function showApp(){
+    try{
+      var setup = document.getElementById('setup');
+      if(setup){ setup.classList.remove('show'); setup.style.display='none'; }
+    }catch(e){}
+    try{
+      var app = document.getElementById('app');
+      if(app){ app.classList.add('visible'); app.style.display='flex'; }
+    }catch(e){}
+    try{
+      var env = document.getElementById('envbar');
+      if(env) env.style.display='block';
+    }catch(e){}
+    try{ updateHUD(); }catch(e){}
+    try{ removeSplash(); }catch(e){}
+    log('[boot] showApp ok');
+  }
+
+  function showSetup(){
+    try{
+      var app = document.getElementById('app');
+      if(app){ app.classList.add('visible'); app.style.display='flex'; }
+    }catch(e){}
+    try{
+      var setup = document.getElementById('setup');
+      if(setup){ setup.classList.add('show'); setup.style.display='flex'; }
+    }catch(e){}
+    try{ refreshApiState(); }catch(e){}
+    try{ removeSplash(); }catch(e){}
+    log('[boot] setup visible');
+  }
+
+  function saveApiFromInput(){
+    var raw = cleanAuraText((document.getElementById('akey') || {}).value || '');
+    if(!raw){
+      log('[api] input vacío');
+      refreshApiState();
+      return;
+    }
+    if(raw.indexOf('AIza') === 0){
+      S.geminiKey = raw;
+      try{ localStorage.setItem('a_geminikey', raw); }catch(e){}
+      log('[api] gemini guardada');
+    }else{
+      S.key = raw;
+      try{ localStorage.setItem('a_key', raw); }catch(e){}
+      log('[api] key genérica guardada');
+    }
+    refreshApiState();
+    updateHUD();
+  }
+
+  function forgetApi(){
+    S.key = '';
+    S.geminiKey = '';
+    try{
+      localStorage.removeItem('a_key');
+      localStorage.removeItem('a_geminikey');
+    }catch(e){}
+    var akey = document.getElementById('akey');
+    if(akey) akey.value = '';
+    log('[api] olvidada');
+    refreshApiState();
+    updateHUD();
+  }
+
+  function updateKeyboardMode(open){
+    document.body.classList.toggle('kb-open', !!open);
+    var chat = document.getElementById('chat');
+    if(open && chat){
+      setTimeout(function(){ chat.scrollTop = chat.scrollHeight; }, 100);
+    }
+  }
+
+  function wireUI(){
+    var go = document.getElementById('su-go');
+    var noKey = document.getElementById('su-no-key');
+    var save = document.getElementById('su-save');
+    var forget = document.getElementById('su-forget');
+    var inp = document.getElementById('inp');
+    var send = document.getElementById('b-send');
+
+    if(go){
+      go.addEventListener('click', function(ev){
+        ev.preventDefault();
+        saveApiFromInput();
+        if(!hasGemini()) log('[boot] no key, enter allowed');
+        showApp();
+      });
+    }
+    if(noKey){
+      noKey.addEventListener('click', function(ev){
+        ev.preventDefault();
+        log('[boot] no key, enter allowed');
+        showApp();
+      });
+    }
+    if(save){
+      save.addEventListener('click', function(ev){
+        ev.preventDefault();
+        saveApiFromInput();
+      });
+    }
+    if(forget){
+      forget.addEventListener('click', function(ev){
+        ev.preventDefault();
+        forgetApi();
+      });
+    }
+
+    var openSetup = document.getElementById('open-setup');
+    if(openSetup){
+      openSetup.addEventListener('click', function(){
+        var setup = document.getElementById('setup');
+        if(setup){
+          setup.classList.add('show');
+          setup.style.display='flex';
+          refreshApiState();
+          log('[api] setup abierto');
+        }
+      });
+    }
+    var forget2 = document.getElementById('forget-api');
+    if(forget2){
+      forget2.addEventListener('click', function(){ forgetApi(); });
+    }
+
+    if(send) send.addEventListener('click', sendNow);
+    if(inp){
+      inp.addEventListener('keydown', function(e){
+        if(e.key === 'Enter' && !e.shiftKey){
+          e.preventDefault();
+          sendNow();
+        }
+      });
+      inp.addEventListener('input', function(){
+        inp.style.height = 'auto';
+        inp.style.height = Math.min(inp.scrollHeight, 110) + 'px';
+      });
+      inp.addEventListener('focus', function(){ updateKeyboardMode(true); });
+      inp.addEventListener('blur', function(){ setTimeout(function(){ updateKeyboardMode(false); }, 150); });
+    }
+
+    document.querySelectorAll('.atab').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.preventDefault();
+        setAgent(btn.dataset.agent);
+      });
+    });
+
+    var mic = document.getElementById('b-imic');
+    if(mic){
+      mic.addEventListener('click', function(){
+        appendMsg('sys', 'La voz sigue fuera del v13.4. El pipeline de texto real ya está activo.', true);
+      });
+    }
+    var attach = document.getElementById('b-attach');
+    if(attach){
+      attach.addEventListener('click', function(){
+        appendMsg('sys', 'La adjunción real aún no está reinyectada. Pipeline de texto vivo.', true);
+      });
+    }
+
+    log('[boot] wireUI ok');
+  }
+
+  function init(){
+    log('[boot] init authority');
+    loadState();
+    wireUI();
+    setAgent(S.agent || 'general');
+    updateHUD();
+    setTimeout(showSetup, 1200);
+  }
+
+  window.addEventListener('error', function(ev){
+    log('ERROR ' + (ev && ev.message ? ev.message : 'unknown'));
+  });
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
