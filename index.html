@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r24c-gate-fix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r24c-gate-fix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r24c-gate-fix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r24d-user-bubble"/>
+<meta name="aura-build" content="IndexASv5.5.4-r24d-user-bubble"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r24d-user-bubble</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r24c-gate-fix";var VERSION="vIndexASv5.5.4-r24c-gate-fix";</script>
+<script>var BUILD="IndexASv5.5.4-r24d-user-bubble";var VERSION="vIndexASv5.5.4-r24d-user-bubble";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -16234,6 +16234,7 @@ window.forceEnterAura = function(ev){
               if(reviewResult.ok){
                 var ICONS = { approve:'✓ aprobado', reject:'✗ rechazado', hold:'⏸ pausado', revise:'✎ revisión solicitada', approve_partial:'~ aprobado parcialmente' };
                 var reply = '[AuraSupervisor] Propuesta '+pending[0].id+' — '+(ICONS[parsed.intent]||parsed.intent)+'\n'+parsed.reason+(Object.keys(parsed.constraints||{}).length?'\nConstraints: '+Object.keys(parsed.constraints).join(', '):'');
+                if(typeof window.addMsg==='function') window.addMsg('user', text);
                 if(typeof window.addMsg==='function') window.addMsg('aura', reply);
                 if(window.AuraMeta) window.AuraMeta.logDecision({ decision:'allow', reason:'supervisor:'+parsed.intent+':'+pending[0].id, source:'supervisorGate', ts:Date.now() });
                 return Promise.resolve(true); // mensaje consumido — no pasa al LLM
@@ -16376,6 +16377,9 @@ window.forceEnterAura = function(ev){
           // Con propuesta pendiente pasa al supervisor gate.
           var hasPending = AE && typeof AE.getAwaitingReview === 'function' && AE.getAwaitingReview().length > 0;
           if(!hasPending){
+            // Renderizar burbuja del usuario antes de consumir el mensaje
+            // (addMsg('user') ocurre en _auraProcessInput, que no llega a ejecutarse)
+            if(typeof window.addMsg === 'function') window.addMsg('user', text);
             if(_isActionable(text)){
               // ── ACCIONAL → generar propuesta en staging ─────────────
               var id = (AE && typeof AE.propose === 'function')
