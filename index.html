@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r22-oai-voice"/>
-<meta name="aura-build" content="IndexASv5.5.4-r22-oai-voice"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r22-oai-voice</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r23-oai-realtime"/>
+<meta name="aura-build" content="IndexASv5.5.4-r23-oai-realtime"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r23-oai-realtime</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r22-oai-voice";var VERSION="vIndexASv5.5.4-r22-oai-voice";</script>
+<script>var BUILD="IndexASv5.5.4-r23-oai-realtime";var VERSION="vIndexASv5.5.4-r23-oai-realtime";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -17110,6 +17110,446 @@ window.forceEnterAura = function(ev){
   };
 
   console.log('[AuraOAIVoice v1.0-phaseAB] instalado — /voice oai key [...] para activar');
+})();
+</script>
+
+
+<script id="aura-oai-realtime-v1">
+// ═══════════════════════════════════════════════════════════════════
+// AuraRealtime v1.0 — Phase C + D
+//
+// Fase C — Realtime WebSocket (gpt-4o-realtime-preview):
+//   STT: server_vad → auto-detect inicio/fin de voz → transcripción
+//        → AURA pipeline (no bypass de agentes)
+//   TTS: VoiceManager.speak → inyecta [SPEAK] → streaming PCM16
+//        → primer chunk <200ms (latencia real de red)
+//   Barge-in: input_speech_started → stopPlayback() + response.cancel
+//
+// Fase D — VoiceManager SPEAKING state sync:
+//   Patch sobre el hook OAI-TTS (Phase A) para registrar
+//   VM.state=SPEAKING mientras reproduce audio batch.
+//   Realtime TTS gestiona su propio estado vía respuesta streaming.
+//
+// Autenticación: WebSocket subprotocol openai-insecure-api-key.<key>
+//   (browser no puede enviar headers HTTP en WebSocket; este es
+//    el método oficial de OpenAI para conexión desde el cliente)
+//
+// Requiere: AuraOAIVoice (aura-oai-voice-v1) instalado con key.
+// Activar: /voice oai realtime on
+// ═══════════════════════════════════════════════════════════════════
+(function(){
+  if(window.AuraRealtime && window.AuraRealtime._installed) return;
+
+  var RT_MODEL   = 'gpt-4o-realtime-preview-2024-12-17';
+  var SAMPLE_RATE = 24000; // PCM16 @ 24 kHz (requisito del API)
+
+  var _ws            = null;
+  var _audioCtx      = null;
+  var _captureSource = null;
+  var _captureProc   = null;
+  var _captureStream = null;
+  var _nextPlayTime  = 0;
+  var _ttsActive     = false; // true mientras esperamos audio de respuesta RT
+  var _outputSources = [];    // AudioBufferSourceNodes en cola
+
+  // ── Helpers PCM16 ─────────────────────────────────────────────────
+  function _f32ToPCM16(f32){
+    var buf  = new ArrayBuffer(f32.length * 2);
+    var view = new DataView(buf);
+    for(var i=0; i<f32.length; i++){
+      var s = Math.max(-1, Math.min(1, f32[i]));
+      view.setInt16(i*2, s<0 ? s*0x8000 : s*0x7FFF, true);
+    }
+    return buf;
+  }
+  function _b64ToF32(b64){
+    var bin = atob(b64);
+    var buf = new ArrayBuffer(bin.length);
+    var u8  = new Uint8Array(buf);
+    for(var i=0; i<bin.length; i++) u8[i] = bin.charCodeAt(i);
+    var i16 = new Int16Array(buf);
+    var f32 = new Float32Array(i16.length);
+    for(var i=0; i<i16.length; i++) f32[i] = i16[i]/32768.0;
+    return f32;
+  }
+  function _bufToB64(ab){
+    var u8  = new Uint8Array(ab);
+    var bin = '';
+    for(var i=0; i<u8.length; i++) bin += String.fromCharCode(u8[i]);
+    return btoa(bin);
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────────────
+  function _wsSend(obj){
+    if(_ws && _ws.readyState === WebSocket.OPEN) _ws.send(JSON.stringify(obj));
+  }
+
+  function _onOpen(){
+    console.log('[AuraRT] conectado →', RT_MODEL);
+    var OAI = window.AuraOAIVoice;
+    _wsSend({
+      type: 'session.update',
+      session: {
+        modalities: ['audio','text'],
+        voice: (OAI && OAI.config && OAI.config.voice) || 'nova',
+        input_audio_format:  'pcm16',
+        output_audio_format: 'pcm16',
+        input_audio_transcription: { model: 'whisper-1' },
+        turn_detection: {
+          type:                'server_vad',
+          threshold:           0.5,
+          prefix_padding_ms:   300,
+          silence_duration_ms: 600
+        },
+        // Solo habla cuando se le pide con [SPEAK]; evita respuestas propias
+        instructions: 'Eres el módulo de síntesis de voz de AURA. Tu único trabajo es leer en voz alta el texto que comienza con [SPEAK]. Léelo exactamente, sin añadir nada. Si no hay etiqueta [SPEAK], di solo un punto.'
+      }
+    });
+    _startCapture();
+  }
+
+  function _onMsg(evt){
+    var ev; try{ ev = JSON.parse(evt.data); }catch(e){ return; }
+    switch(ev.type){
+
+      // ─ VAD: usuario empieza a hablar → barge-in ─
+      case 'input_speech_started':
+        _stopPlayback();
+        if(_ttsActive){ _wsSend({type:'response.cancel'}); _ttsActive=false; }
+        _sig('🎤 RT — escuchando', 'rgba(0,196,140,.5)');
+        break;
+
+      case 'input_speech_stopped':
+        _sig('[◈] RT — procesando...', 'rgba(255,196,0,.5)');
+        break;
+
+      // ─ Respuesta auto-generada por VAD → cancelar (nosotros manejamos el pipeline) ─
+      case 'response.created':
+        if(!_ttsActive){ _wsSend({type:'response.cancel'}); }
+        break;
+
+      // ─ TTS: chunks de audio en streaming ─
+      case 'response.audio.delta':
+        if(ev.delta && _ttsActive) _scheduleChunk(ev.delta);
+        break;
+
+      case 'response.audio.done':
+      case 'response.done':
+        _ttsActive = false;
+        _vmSpeakingOff();
+        break;
+
+      // ─ Transcripción del usuario → pipeline de AURA ─
+      case 'conversation.item.input_audio_transcription.completed':
+        var txt = (ev.transcript||'').trim();
+        if(txt && txt !== '.'){
+          _sig('[◈] RT → "'+txt.slice(0,50)+'"', 'rgba(0,196,140,.6)');
+          try{
+            if(typeof window.__auraProcessAuraInput==='function'){
+              window.__auraProcessAuraInput(txt, {fromRealtime:true, voice:true});
+            } else if(typeof window.send==='function'){
+              window.send(txt);
+            }
+          }catch(e){ console.warn('[AuraRT] dispatch error:',e.message); }
+        }
+        break;
+
+      case 'session.updated':
+        console.log('[AuraRT] sesión lista — VAD activo');
+        _sig('[◈] RT — listo, habla', 'rgba(0,196,140,.6)');
+        break;
+
+      case 'error':
+        console.warn('[AuraRT] error:', ev.error);
+        _ttsActive = false;
+        try{ if(typeof toast==='function') toast('[RT] '+((ev.error&&ev.error.message)||'error').slice(0,80)); }catch(e){}
+        break;
+    }
+  }
+
+  // ── Captura de audio → WS ─────────────────────────────────────────
+  async function _startCapture(){
+    if(_captureStream) return;
+    try{
+      var stream = await navigator.mediaDevices.getUserMedia({
+        audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true },
+        video: false
+      });
+      _captureStream = stream;
+
+      if(!_audioCtx) _audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+      if(_audioCtx.state==='suspended') await _audioCtx.resume();
+
+      _captureSource = _audioCtx.createMediaStreamSource(stream);
+      _captureProc   = _audioCtx.createScriptProcessor(4096, 1, 1);
+      _captureProc.onaudioprocess = function(e){
+        if(!_ws || _ws.readyState !== WebSocket.OPEN) return;
+        var f32 = e.inputBuffer.getChannelData(0);
+        var pcm = _f32ToPCM16(f32);
+        _wsSend({ type:'input_audio_buffer.append', audio:_bufToB64(pcm) });
+      };
+      _captureSource.connect(_captureProc);
+      _captureProc.connect(_audioCtx.destination);
+      console.log('[AuraRT] captura PCM16@24kHz iniciada (echoCancellation ON)');
+    }catch(e){
+      console.warn('[AuraRT] getUserMedia error:', e.message);
+      try{ if(typeof toast==='function') toast('[RT] Mic: '+e.message.slice(0,60)); }catch(_e){}
+    }
+  }
+
+  function _stopCapture(){
+    try{ if(_captureProc)  { _captureProc.disconnect();  _captureProc=null;  } }catch(e){}
+    try{ if(_captureSource){ _captureSource.disconnect(); _captureSource=null;} }catch(e){}
+    if(_captureStream){ _captureStream.getTracks().forEach(function(t){t.stop();}); _captureStream=null; }
+  }
+
+  // ── Reproducción streaming ─────────────────────────────────────────
+  function _scheduleChunk(b64){
+    try{
+      if(!_audioCtx) _audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+      var f32  = _b64ToF32(b64);
+      var abuf = _audioCtx.createBuffer(1, f32.length, SAMPLE_RATE);
+      abuf.copyToChannel(f32, 0);
+      var src  = _audioCtx.createBufferSource();
+      src.buffer = abuf;
+      src.connect(_audioCtx.destination);
+      var now   = _audioCtx.currentTime;
+      var start = Math.max(now + 0.01, _nextPlayTime);
+      src.start(start);
+      _nextPlayTime = start + abuf.duration;
+      _outputSources.push(src);
+      src.onended = function(){ _outputSources = _outputSources.filter(function(x){ return x!==src; }); };
+    }catch(e){ console.warn('[AuraRT] chunk playback:', e.message); }
+  }
+
+  function _stopPlayback(){
+    _outputSources.forEach(function(s){ try{s.stop(0);}catch(e){} });
+    _outputSources = [];
+    if(_audioCtx) _nextPlayTime = _audioCtx.currentTime;
+  }
+
+  // ── TTS via Realtime: inyectar texto → audio streaming ────────────
+  function _speakRT(text){
+    if(!_ws || _ws.readyState !== WebSocket.OPEN) return false;
+    _stopPlayback();
+    _ttsActive = true;
+    _vmSpeakingOn();
+    _wsSend({
+      type: 'conversation.item.create',
+      item: { type:'message', role:'user',
+              content:[{type:'input_text', text:'[SPEAK] '+text}] }
+    });
+    _wsSend({
+      type: 'response.create',
+      response: {
+        modalities: ['audio'],
+        instructions: 'Lee exactamente el texto entre [SPEAK] y el final. Solo ese texto, sin añadir nada.'
+      }
+    });
+    return true;
+  }
+
+  // ── Fase D: VoiceManager SPEAKING state ───────────────────────────
+  // Registra VM.state mientras TTS reproduce para que el runtime sepa
+  // que AURA está hablando (evita procesamiento de eco propio).
+  function _vmSpeakingOn(){
+    try{
+      var VM = window.VoiceManager;
+      if(VM && typeof VM.setState==='function') VM.setState('SPEAKING');
+      else if(VM) VM.state = 'SPEAKING';
+    }catch(e){}
+  }
+  function _vmSpeakingOff(){
+    try{
+      var VM = window.VoiceManager;
+      if(VM && typeof VM.setState==='function') VM.setState('IDLE');
+      else if(VM && VM.state==='SPEAKING') VM.state = 'IDLE';
+    }catch(e){}
+  }
+
+  // ── API pública ───────────────────────────────────────────────────
+  window.AuraRealtime = {
+    _installed:  true,
+    VERSION:     'v1.0-phaseCD',
+    isConnected: function(){ return !!_ws && _ws.readyState===WebSocket.OPEN; },
+
+    start: function(){
+      return new Promise(function(resolve, reject){
+        try{
+          if(window.AuraRealtime.isConnected()){ resolve(); return; }
+          var OAI = window.AuraOAIVoice;
+          if(!OAI || !OAI.hasKey()){ reject(new Error('sin OpenAI key')); return; }
+          var key = OAI.getKey();
+          _ws = new WebSocket(
+            'wss://api.openai.com/v1/realtime?model='+RT_MODEL,
+            ['realtime', 'openai-insecure-api-key.'+key, 'openai-beta.realtime-v1']
+          );
+          var _timer = setTimeout(function(){ reject(new Error('timeout conexión RT (8s)')); }, 8000);
+          _ws.onopen = function(){
+            clearTimeout(_timer);
+            _onOpen();
+            _hookRTSpeak();
+            resolve();
+          };
+          _ws.onmessage = _onMsg;
+          _ws.onerror   = function(){ clearTimeout(_timer); reject(new Error('WS connection failed')); };
+          _ws.onclose   = function(e){
+            _stopCapture(); _stopPlayback(); _unhookRTSpeak();
+            _ws=null; _ttsActive=false; _vmSpeakingOff();
+            _sig('[◈] RT desconectado ('+e.code+')', 'rgba(100,116,139,.4)');
+          };
+        }catch(e){ reject(e); }
+      });
+    },
+
+    stop: function(){
+      _unhookRTSpeak();
+      _stopCapture();
+      _stopPlayback();
+      _vmSpeakingOff();
+      if(_ws){ try{ _ws.close(); }catch(e){} _ws=null; }
+      _ttsActive = false;
+    },
+
+    speakRT:   _speakRT,
+    stopSpeak: _stopPlayback
+  };
+
+  // ── Hook VoiceManager.speak → RT TTS (prioridad sobre Phase A) ────
+  var _origRTSpeak = null;
+  function _hookRTSpeak(){
+    var VM = window.VoiceManager;
+    if(!VM || _origRTSpeak) return;
+    _origRTSpeak = VM.speak;
+    VM.speak = async function(text){
+      if(window.AuraRealtime.isConnected()){
+        var ok = _speakRT(text);
+        if(ok) return; // streaming TTS en curso
+      }
+      return _origRTSpeak.apply(this, arguments);
+    };
+    VM.speak.__rtHooked = 'oai-realtime-v1';
+  }
+  function _unhookRTSpeak(){
+    var VM = window.VoiceManager;
+    if(!VM||!_origRTSpeak) return;
+    VM.speak = _origRTSpeak; _origRTSpeak = null;
+  }
+
+  // ── Fase D patch: Phase A TTS → SPEAKING state ───────────────────
+  // Cuando Realtime NO está conectado, Phase A (batch TTS) también
+  // debe registrar SPEAKING para coherencia del runtime.
+  (function _patchPhaseATTS(){
+    var OAI = window.AuraOAIVoice;
+    if(!OAI) return;
+    var _origSpeak = OAI.speakAsync;
+    OAI.speakAsync = async function(text, opts){
+      _vmSpeakingOn();
+      try{
+        var r = await _origSpeak.apply(this, arguments);
+        return r;
+      }finally{
+        _vmSpeakingOff();
+      }
+    };
+    OAI.speakAsync.__phaseDPatched = true;
+  })();
+
+  // ── Utilidad ──────────────────────────────────────────────────────
+  function _sig(msg, color){
+    try{ var sf=window.sig; if(typeof sf==='function') sf(msg, color||'rgba(0,196,140,.5)'); }catch(e){}
+  }
+
+  // ── handleCmd: /voice oai realtime * ─────────────────────────────
+  (function(){
+    var _orig = window.handleCmd;
+    if(typeof _orig!=='function'||_orig.__rtCmdLayer) return;
+    window.handleCmd = function(cmd){
+      var p    = (cmd||'').trim().split(/\s+/);
+      var base = (p[0]||'').slice(1).toLowerCase();
+      var s1   = (p[1]||'').toLowerCase();
+      var s2   = (p[2]||'').toLowerCase();
+      var s3   = (p[3]||'').toLowerCase();
+      var RT   = window.AuraRealtime;
+
+      if(base==='voice' && s1==='oai' && s2==='realtime'){
+
+        if(s3==='on'||s3==='start'){
+          if(!window.AuraOAIVoice||!window.AuraOAIVoice.hasKey()){
+            try{if(typeof addMsg==='function')addMsg('aura','[RT] Sin key. Usa /voice oai key sk-...');}catch(e){}
+            return Promise.resolve(true);
+          }
+          if(RT.isConnected()){
+            try{if(typeof addMsg==='function')addMsg('aura','[RT] Ya conectado. /voice oai realtime off para desconectar.');}catch(e){}
+            return Promise.resolve(true);
+          }
+          try{if(typeof addMsg==='function')addMsg('aura','[RT] Conectando a OpenAI Realtime...');}catch(e){}
+          RT.start().then(function(){
+            try{
+              if(typeof addMsg==='function') addMsg('aura',[
+                '[◈] AURA REALTIME ACTIVO — '+RT.VERSION,'',
+                'STT:     VAD automático (sin botón ni stop manual)',
+                'TTS:     streaming PCM16 @ 24kHz — primer chunk <200ms',
+                'Barge-in: habla mientras AURA responde para interrumpirla',
+                'Echo:    cancelación activa (echoCancellation ON)','',
+                'Habla normalmente. AURA escucha todo el tiempo.',
+                '/voice oai realtime off → desconectar y volver a Fase A+B'
+              ].join('\n'));
+            }catch(e){}
+          }).catch(function(err){
+            try{if(typeof addMsg==='function')addMsg('aura','[RT] Error: '+err.message);}catch(e){}
+          });
+          return Promise.resolve(true);
+        }
+
+        if(s3==='off'||s3==='stop'){
+          RT.stop();
+          try{if(typeof addMsg==='function')addMsg('aura','[◈] Realtime desconectado — vuelve a Phase A+B (batch TTS / Whisper)');}catch(e){}
+          return Promise.resolve(true);
+        }
+
+        // /voice oai realtime → status
+        try{
+          if(typeof addMsg==='function') addMsg('aura',[
+            '[ [◈] AURA REALTIME '+RT.VERSION+' ]','',
+            'Estado:   '+(RT.isConnected()?'CONECTADO ✓':'desconectado'),
+            'Modelo:   '+RT_MODEL,
+            'STT:      server_vad (automático, sin control manual)',
+            'TTS:      streaming PCM16 @ 24kHz',
+            'Barge-in: activo cuando conectado',
+            'Fase D:   VoiceManager SPEAKING state — activo','',
+            'Comandos:',
+            '  /voice oai realtime on   → conectar',
+            '  /voice oai realtime off  → desconectar',
+            '',
+            'Pendiente (Fase C+D futuro):',
+            '  • Token efímero via jfUrl (sin exponer key en WS protocol)',
+            '  • VAD threshold configurable',
+            '  • Mute mic durante TTS (Phase D completo)'
+          ].join('\n'));
+        }catch(e){}
+        return Promise.resolve(true);
+      }
+
+      return _orig.apply(this, arguments);
+    };
+    window.handleCmd.__rtCmdLayer = 'oai-realtime-v1';
+    window._handleCmd = window.handleCmd;
+    console.log('[AuraRealtime] handleCmd extendido — /voice oai realtime on/off');
+  })();
+
+  // ── Actualizar infinibit ──────────────────────────────────────────
+  try{
+    if(window.AuraKernel && window.AuraKernel.infinibit){
+      var ib = window.AuraKernel.infinibit;
+      ib.version = 'v1.9';
+      if(ib.modules && ib.modules.indexOf('AuraRealtime')<0)
+        ib.modules.push('AuraRealtime');
+      if(ib.gates) ib.gates.realtime = 'oai-realtime-v1';
+    }
+  }catch(e){}
+
+  console.log('[AuraRealtime v1.0-phaseCD] instalado — /voice oai realtime on para activar');
 })();
 </script>
 
