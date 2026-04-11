@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r11-hotfix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r11-hotfix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r11-hotfix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r12-hotfix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r12-hotfix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r12-hotfix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r11-hotfix";var VERSION="vIndexASv5.5.4-r11-hotfix";</script>
+<script>var BUILD="IndexASv5.5.4-r12-hotfix";var VERSION="vIndexASv5.5.4-r12-hotfix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -934,7 +934,7 @@ window.onNativeSTTError = function(msg){
 <script>
 if('serviceWorker' in navigator){
   (function(){
-    var SW_URL = '/sw.js?v=' + BUILD;
+    var SW_URL = new URL('./sw.js?v=' + BUILD, location.href).toString();
     navigator.serviceWorker.getRegistrations().then(function(regs){
       var promises = regs.map(function(r){
         var url = '';
@@ -954,6 +954,19 @@ if('serviceWorker' in navigator){
     }).catch(function(){ /* silenciar - SW es opcional */ });
   })();
 }
+// Reset manual del SW y caché (accesible desde consola o comandos internos)
+window.resetAuraSW = async function(){
+  try{
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const r of regs) await r.unregister();
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+    localStorage.setItem('aura_sw_reset_at', String(Date.now()));
+    location.reload();
+  }catch(e){
+    console.error('resetAuraSW error', e);
+  }
+};
 </script>
 
 <script>
@@ -9874,7 +9887,23 @@ var VoiceManager = (function() {
 })();
 
 // Wiring: VoiceManager es la única autoridad de voz
-window.speak        = function(txt){ return VoiceManager.speak(txt); };
+// speak y startVoice prefieren AURA_NATIVE (Android bridge) cuando disponible
+window.speak = function(txt){
+  try{
+    if(window.AURA_NATIVE && window.AURA_NATIVE.hasAndroid && window.AURA_NATIVE.hasAndroid()){
+      return window.AURA_NATIVE.speak(String(txt || ''));
+    }
+  }catch(e){}
+  return VoiceManager.speak(txt);
+};
+window.startVoice = function(){
+  try{
+    if(window.AURA_NATIVE && window.AURA_NATIVE.hasAndroid && window.AURA_NATIVE.hasAndroid()){
+      return window.AURA_NATIVE.startSTT();
+    }
+  }catch(e){}
+  return VoiceManager.toggleDirectMic();
+};
 window.manualSpeak  = function(txt, btn){ return VoiceManager.manualSpeak(txt, btn); };
 window.unlockAudio  = VoiceManager.unlockAudio;
 window.updateMuteUI = VoiceManager.renderUI;
@@ -9882,7 +9911,6 @@ window._toggleMute  = VoiceManager.toggleMute;
 window.jarvisToggle = VoiceManager.toggleConversation;
 window.toggleMic    = function(){ return VoiceManager.toggleDirectMic(); };
 window._jarvisToggle = window.jarvisToggle;
-window.startVoice    = function(){ return VoiceManager.toggleDirectMic(); };
 
 // /voice comando de diagnóstico
 (function(){
