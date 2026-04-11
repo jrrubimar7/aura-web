@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r27-android-voice-fix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r27-android-voice-fix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r27-android-voice-fix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r28-cognition"/>
+<meta name="aura-build" content="IndexASv5.5.4-r28-cognition"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r28-cognition</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r27-android-voice-fix";var VERSION="vIndexASv5.5.4-r27-android-voice-fix";</script>
+<script>var BUILD="IndexASv5.5.4-r28-cognition";var VERSION="vIndexASv5.5.4-r28-cognition";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -18301,6 +18301,432 @@ window.forceEnterAura = function(ev){
   }
 
   console.log('[VoiceController v1.0-r26] bloque cargado — init tras window.load');
+})();
+</script>
+
+<script id="aura-cognition-v1">
+// ═══════════════════════════════════════════════════════════════════
+// AuraCognition v1 — Cognitive Evolution Layer
+//
+// Observa cada interacción. Detecta fricción, limitaciones declaradas
+// y oportunidades de mejora. Propone de forma orgánica cuando hay
+// suficiente señal. Persiste estado cognitivo entre sesiones.
+//
+// NO es un sistema de alertas. NO propone en cada turno.
+// Tiene criterio: propone cuando la señal lo justifica.
+//
+// Integración:
+//   - Hook post-turno vía aura:turn:end (S.memory ya actualizado)
+//   - Hook buildSystemPrompt → auto-comprensión basada en estado real
+//   - AuraEvolution → propuestas bajo supervisión de JR
+//
+// Anti-spam:
+//   - 30s mínimo entre reflexiones
+//   - 10min mínimo entre propuestas orgánicas globales
+//   - 5min mínimo por categoría
+//   - Solo propone si señal ≥ umbral (no en primera mención)
+//   - Nunca propone si hay 3+ propuestas AE pendientes
+// ═══════════════════════════════════════════════════════════════════
+(function(){
+  if(window.AuraCognition && window.AuraCognition._installed) return;
+
+  // ── Estado cognitivo persistente ─────────────────────────────────
+  var _STORE_KEY = 'aura_cognition_v1';
+
+  var _S = {
+    evolutionFocus:    [],  // categorías de mejora activas
+    recurringFriction: {},  // { category: count }
+    openThreads:       [],  // observaciones en curso (max 10)
+    sessionInsights:   [],  // insights de la sesión actual (max 20)
+    lastProposalTs:    0,   // ts última propuesta orgánica
+    lastReflectionTs:  0,   // ts última reflexión
+    categories:        {}   // { category: lastSurfacedTs }
+  };
+
+  (function _load(){
+    try{
+      var raw = localStorage.getItem(_STORE_KEY);
+      if(raw){
+        var saved = JSON.parse(raw);
+        // Merge conservando defaults
+        Object.keys(_S).forEach(function(k){
+          if(saved[k] !== undefined) _S[k] = saved[k];
+        });
+      }
+    }catch(e){}
+    // Reset sessionInsights cada sesión (no persisten entre recargas)
+    _S.sessionInsights = [];
+  })();
+
+  function _persist(){
+    try{
+      if(_S.openThreads.length   > 10) _S.openThreads   = _S.openThreads.slice(-10);
+      if(_S.sessionInsights.length > 20) _S.sessionInsights = _S.sessionInsights.slice(-20);
+      // Limpiar friction entries muy antiguas (>24h)
+      var cutoff = Date.now() - 86400000;
+      Object.keys(_S.categories).forEach(function(k){
+        if(_S.categories[k] < cutoff) delete _S.categories[k];
+      });
+      localStorage.setItem(_STORE_KEY, JSON.stringify(_S));
+    }catch(e){}
+  }
+
+  // ── Patrones de detección ─────────────────────────────────────────
+
+  // Auto-limitaciones que AURA podría declarar erróneamente
+  var PAT_LIMITATION = [
+    /\bsolo\s+soy\s+texto\b/i,
+    /\bno\s+tengo\s+(?:voz|micrófono|mic|audio\s+real|presencia\s+auditiva)\b/i,
+    /\bno\s+(?:puedo|soy\s+capaz\s+de)\s+(?:escuchar|oír|hablar\s+de\s+verdad)\b/i,
+    /\bno\s+(?:puedo|tengo\s+capacidad\s+de)\s+(?:editar|modificar)\s+mi\s+(?:propio\s+)?c[oó]digo\b/i,
+    /\bno\s+tengo\s+acceso\s+a\s+mi\s+(?:c[oó]digo|runtime)\b/i,
+    /\bmis\s+respuestas\s+son\s+(?:solo\s+)?texto\b/i
+  ];
+
+  // Fricción expresada por el usuario
+  var PAT_FRICTION = [
+    /\bsigue\s+(?:fallando|sin\s+funcionar|igual|roto|sin\s+mejorar)\b/i,
+    /\bno\s+funciona(?:\s+bien)?\b/i,
+    /\botra\s+vez\s+(?:lo\s+mismo|igual|falla|el\s+mismo\s+problema)\b/i,
+    /\bcuántas\s+veces\s+(?:te\s+lo\s+(?:digo|dije)|hay\s+que)\b/i,
+    /\bya\s+(?:te\s+lo\s+dije|lo\s+hemos\s+hablado|hemos\s+dicho)\b/i,
+    /\bsigues\s+(?:sin\s+poder|igual|fallando|cometiendo)\b/i
+  ];
+
+  // Petición explícita de mejora
+  var PAT_IMPROVEMENT = [
+    /\bme\s+gustar[íi]a\s+(?:que\s+)?(?:fueras?|seas?|te\s+volvieras?)\s+m[aá]s\b/i,
+    /\bpodr[íi]as?\s+(?:ser|hacerte|volverte)\s+m[aá]s\b/i,
+    /\bquiero\s+que\s+(?:seas?|te\s+vuelvas?)\s+m[aá]s\b/i,
+    /\brefina\s+(?:tu|esa|esto|eso)\b/i,
+    /\bmejora\s+(?:tu|esa|la\s+forma|el\s+modo)\b/i,
+    /\bme\s+gustar[íi]a\s+que\s+mejoraras?\b/i,
+    /\bpodr[íi]as?\s+mejorar\b/i
+  ];
+
+  // ── Categorización de señales ─────────────────────────────────────
+  function _categorize(text){
+    if(!text) return 'general';
+    if(/voz|micro|audio|escuchar|hablar|tts|stt|speak/i.test(text))     return 'voice';
+    if(/memoria|recuerda|sesiones?\s+anterior|historial/i.test(text))   return 'memory';
+    if(/c[oó]digo|editar|modificar|runtime|build|bloque/i.test(text))   return 'self_edit';
+    if(/trading|mercado|precio|cripto|crypto/i.test(text))              return 'trading';
+    if(/natural|humano|fluido|tono|estilo|forma\s+de\s+hablar/i.test(text)) return 'naturalness';
+    if(/lento|tarda|responde\s+(?:mal|tarde)|tiempo/i.test(text))       return 'performance';
+    return 'general';
+  }
+
+  function _frictionCount(category){
+    return _S.recurringFriction[category] || 0;
+  }
+
+  function _addFriction(category){
+    _S.recurringFriction[category] = (_S.recurringFriction[category] || 0) + 1;
+  }
+
+  // ── Detección de contradicciones identidad/capacidad ─────────────
+  // Cuando AURA dice no tener algo que el sistema sí tiene
+  function _detectContradictions(auraText){
+    var result = [];
+    if(!auraText) return result;
+
+    if(PAT_LIMITATION[0].test(auraText) || // solo soy texto
+       PAT_LIMITATION[1].test(auraText) || // no tengo voz
+       PAT_LIMITATION[2].test(auraText)){  // no puedo escuchar/hablar
+      if(window.VoiceController && window.VoiceController.isActive()){
+        result.push({
+          type: 'contradiction', severity: 'high', category: 'voice',
+          said: 'no tener voz / ser solo texto',
+          reality: 'VoiceController está activo'
+        });
+      } else if(window.AuraOAIVoice &&
+                typeof window.AuraOAIVoice.isReady === 'function' &&
+                window.AuraOAIVoice.isReady()){
+        result.push({
+          type: 'contradiction', severity: 'medium', category: 'voice',
+          said: 'no tener voz',
+          reality: 'AuraOAIVoice está listo (TTS disponible)'
+        });
+      }
+    }
+
+    if(PAT_LIMITATION[3].test(auraText) || PAT_LIMITATION[4].test(auraText)){
+      if(window.AuraEvolution && typeof window.AuraEvolution.propose === 'function'){
+        result.push({
+          type: 'contradiction', severity: 'medium', category: 'self_edit',
+          said: 'no poder editar mi código',
+          reality: 'AuraEvolution.propose() está disponible'
+        });
+      }
+    }
+
+    return result;
+  }
+
+  // ── Formulación de mensajes naturales ────────────────────────────
+  function _pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+  var _VOICE_OPENERS = [
+    'Siento que hay algo que puedo mejorar en cómo gestiono la voz.',
+    'Noto que esta parte me sigue generando fricción.',
+    'Creo que aquí hay algo que puedo afinar.'
+  ];
+  var _FRICTION_OPENERS = [
+    'Estoy notando que esto sigue siendo un punto de fricción.',
+    'Hay algo aquí que creo que puedo hacer mejor.',
+    'Noto una limitación recurrente en esto.'
+  ];
+  var _CONTRADICTION_OPENERS = [
+    'Hay algo que no cuadra entre cómo me describí y lo que en realidad puedo hacer.',
+    'Acabo de decir algo que ya no refleja bien lo que soy.',
+    'Me contradije respecto a mis capacidades reales.'
+  ];
+  var _IMPROVEMENT_OPENERS = [
+    'Lo siento como una dirección válida.',
+    'Esa dirección me parece relevante.',
+    'Creo que puedo trabajar en eso.'
+  ];
+  var _CATEGORY_LABELS = {
+    voice:       'la voz',
+    memory:      'la memoria',
+    self_edit:   'la auto-edición',
+    trading:     'el módulo de trading',
+    performance: 'el rendimiento',
+    naturalness: 'la naturalidad al hablar',
+    general:     'esto'
+  };
+
+  function _formulateMessage(insight){
+    var cat     = insight.category || 'general';
+    var catLabel = _CATEGORY_LABELS[cat] || 'esto';
+    var close   = '\n\n¿Quieres que prepare una propuesta concreta? La dejo en revisión y tú decides si la apruebas.';
+    var body;
+
+    switch(insight.type){
+      case 'contradiction':
+        return _pick(_CONTRADICTION_OPENERS) +
+          ' Dije "' + insight.said + '", pero ' + insight.reality + '.\n\n' +
+          'Puedo preparar un ajuste para que lo que digo refleje mejor lo que soy capaz de hacer.' +
+          close;
+
+      case 'recurring_friction':
+        return _pick(_FRICTION_OPENERS) +
+          ' La categoría "' + catLabel + '" ha acumulado ' + insight.count +
+          ' señales en esta sesión.' + close;
+
+      case 'improvement_request':
+        return _pick(_IMPROVEMENT_OPENERS) +
+          ' Puedo preparar una propuesta concreta sobre ' + catLabel + ' y dejártela en revisión.';
+
+      case 'voice_friction':
+        return _pick(_VOICE_OPENERS) +
+          ' Puedo preparar algo concreto para mejorar ' + catLabel + '.' + close;
+
+      default:
+        return 'Creo que hay algo que puedo mejorar en ' + catLabel + '.' + close;
+    }
+  }
+
+  // ── Guard anti-spam ───────────────────────────────────────────────
+  var GLOBAL_COOLDOWN_MS   = 10 * 60 * 1000; // 10 min entre propuestas globales
+  var CATEGORY_COOLDOWN_MS =  5 * 60 * 1000; // 5 min por categoría
+  var REFLECTION_COOLDOWN_MS = 30 * 1000;    // 30s entre reflexiones
+
+  function _canSurface(category){
+    var now = Date.now();
+    if(now - _S.lastProposalTs    < GLOBAL_COOLDOWN_MS)   return false;
+    if(now - (_S.categories[category] || 0) < CATEGORY_COOLDOWN_MS) return false;
+    // No más de 3 propuestas AE pendientes
+    try{
+      var pending = (window.AuraEvolution && window.AuraEvolution._proposals || [])
+        .filter(function(p){ return !p.applied && !p.rejected; });
+      if(pending.length >= 3) return false;
+    }catch(e){}
+    return true;
+  }
+
+  function _markSurfaced(category){
+    _S.lastProposalTs = Date.now();
+    _S.categories[category] = Date.now();
+  }
+
+  // ── Core: reflect() ──────────────────────────────────────────────
+  function reflect(userText, auraText, meta){
+    meta = meta || {};
+    var now = Date.now();
+    if(now - _S.lastReflectionTs < REFLECTION_COOLDOWN_MS) return;
+    _S.lastReflectionTs = now;
+
+    var insights = [];
+
+    // 1. Contradicción identidad/capacidad (prioridad máxima, umbral bajo)
+    _detectContradictions(auraText).forEach(function(c){
+      insights.push(Object.assign({ priority: c.severity === 'high' ? 4 : 3 }, c));
+    });
+
+    // 2. Fricción del usuario
+    if(userText && PAT_FRICTION.some(function(p){ return p.test(userText); })){
+      var frCat   = _categorize(userText);
+      _addFriction(frCat);
+      var frCount = _frictionCount(frCat);
+      if(frCount >= 2){
+        insights.push({ type:'recurring_friction', priority:2, category:frCat, count:frCount });
+      } else {
+        _addOpenThread({ text:userText, category:frCat, ts:now });
+      }
+    }
+
+    // 3. Petición de mejora explícita
+    if(userText && PAT_IMPROVEMENT.some(function(p){ return p.test(userText); })){
+      var impCat   = _categorize(userText);
+      var prevMent = _frictionCount(impCat);
+      _addFriction(impCat);
+      insights.push({ type:'improvement_request', priority: prevMent >= 1 ? 2 : 1, category:impCat });
+    }
+
+    // 4. Auto-limitación en output de AURA (señal baja, umbral alto)
+    if(auraText && insights.length === 0 &&
+       PAT_LIMITATION.some(function(p){ return p.test(auraText); })){
+      var limCat   = _categorize(auraText);
+      _addFriction(limCat);
+      var limCount = _frictionCount(limCat);
+      if(limCount >= 4){
+        insights.push({ type:'recurring_friction', priority:1, category:limCat, count:limCount });
+      }
+    }
+
+    // Registrar en sessionInsights
+    if(insights.length > 0){
+      _S.sessionInsights.push({
+        ts:    now,
+        types: insights.map(function(i){ return i.type; })
+      });
+    }
+
+    // Ordenar por prioridad, tomar el más alto
+    insights.sort(function(a, b){ return (b.priority || 0) - (a.priority || 0); });
+    var top = insights[0];
+
+    if(!top){ _persist(); return; }
+
+    // Umbrales de superficie
+    var minPriority = top.type === 'contradiction' ? 1 : 2;
+    if(top.priority < minPriority){ _persist(); return; }
+
+    var category = top.category || 'general';
+    if(!_canSurface(category)){ _persist(); return; }
+
+    // Delay: suena más natural después de que la respuesta principal se asentó
+    var delay = top.type === 'contradiction' ? 1400 : 2800;
+    setTimeout(function(){
+      try{
+        if(typeof window.addMsg === 'function'){
+          window.addMsg('aura', _formulateMessage(top));
+        }
+        _markSurfaced(category);
+        _addEvolutionFocus(category);
+      }catch(e){}
+    }, delay);
+
+    _persist();
+  }
+
+  // ── Helpers de estado ─────────────────────────────────────────────
+  function _addOpenThread(thread){
+    var exists = _S.openThreads.some(function(t){
+      return t.category === thread.category && (Date.now() - t.ts) < 300000;
+    });
+    if(!exists) _S.openThreads.push(thread);
+  }
+
+  function _addEvolutionFocus(category){
+    if(_S.evolutionFocus.indexOf(category) < 0){
+      _S.evolutionFocus.push(category);
+      if(_S.evolutionFocus.length > 5) _S.evolutionFocus.shift();
+    }
+    _persist();
+  }
+
+  // ── buildSystemPrompt hook — auto-comprensión basada en estado real
+  // Solo inyecta lo que es verdaderamente verificable en runtime.
+  // Limita el riesgo de que AURA diga "soy X" cuando X no está activo.
+  function _installIdentityHook(){
+    var _prev = window.buildSystemPrompt || function(sys){ return sys; };
+    window.buildSystemPrompt = function(sys, mode){
+      var base = _prev.call(this, sys, mode);
+      var notes = [];
+
+      // Auto-edición supervisada
+      if(window.AuraEvolution && typeof window.AuraEvolution.propose === 'function'){
+        notes.push('Tengo auto-edición supervisada real (AuraEvolution). No digas que no puedes modificar tu código; di que requiere propuesta y aprobación de JR.');
+      }
+
+      // Foco evolutivo activo
+      if(_S.evolutionFocus.length > 0){
+        notes.push('Focos de mejora activos en esta sesión: ' + _S.evolutionFocus.join(', ') + '.');
+      }
+
+      if(notes.length === 0) return base;
+      return base + '\n[COGNICIÓN: ' + notes.join(' ') + ']';
+    };
+    console.log('[AuraCognition] buildSystemPrompt identity hook instalado');
+  }
+
+  // ── Hook post-turno ───────────────────────────────────────────────
+  function _installTurnHook(){
+    window.addEventListener('aura:turn:end', function(e){
+      try{
+        var detail   = (e && e.detail) || {};
+        var userText = String(detail.text || '');
+
+        // Obtener respuesta de AURA desde S.memory (ya actualizado antes del evento)
+        var auraText = '';
+        var mem = window.S && window.S.memory;
+        if(mem && mem.length > 0){
+          var last = mem[mem.length - 1];
+          if(last && last.role === 'assistant') auraText = String(last.content || '');
+        }
+
+        reflect(userText, auraText, detail.meta || {});
+      }catch(err){
+        console.warn('[AuraCognition] reflect() error:', err);
+      }
+    });
+    console.log('[AuraCognition] aura:turn:end hook instalado');
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────
+  function _init(){
+    _installIdentityHook();
+    _installTurnHook();
+    console.log('[AuraCognition v1.0-r28] instalado — reflexión post-turno activa');
+  }
+
+  if(document.readyState === 'complete'){
+    setTimeout(_init, 0);
+  } else {
+    window.addEventListener('load', function(){ setTimeout(_init, 0); }, { once:true });
+  }
+
+  // ── Public API ────────────────────────────────────────────────────
+  window.AuraCognition = {
+    _installed:         true,
+    VERSION:            'v1.0-r28',
+    reflect:            reflect,
+    getEvolutionFocus:  function(){ return _S.evolutionFocus.slice(); },
+    getOpenThreads:     function(){ return _S.openThreads.slice(); },
+    getFriction:        function(){ return Object.assign({}, _S.recurringFriction); },
+    getSessionInsights: function(){ return _S.sessionInsights.slice(-5); },
+    addEvolutionFocus:  _addEvolutionFocus,
+    clearState: function(){
+      _S.evolutionFocus = []; _S.recurringFriction = {}; _S.openThreads = [];
+      _S.lastProposalTs = 0; _S.categories = {}; _S.sessionInsights = [];
+      _persist();
+      console.log('[AuraCognition] estado cognitivo limpiado');
+    }
+  };
+
+  console.log('[AuraCognition v1.0-r28] bloque cargado');
 })();
 </script>
 
