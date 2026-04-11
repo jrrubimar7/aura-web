@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r24b-router-fix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r24b-router-fix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r24b-router-fix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r24c-gate-fix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r24c-gate-fix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r24c-gate-fix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r24b-router-fix";var VERSION="vIndexASv5.5.4-r24b-router-fix";</script>
+<script>var BUILD="IndexASv5.5.4-r24c-gate-fix";var VERSION="vIndexASv5.5.4-r24c-gate-fix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -16266,8 +16266,42 @@ window.forceEnterAura = function(ev){
     if(typeof _orig !== 'function') return;
     if(_orig.__capabilityRouted) return;
 
-    // ── Patrones de detección de intención de auto-edición/supervisión ──
-    // Conservador: solo dispara en frases claramente relacionadas con el runtime.
+    // ── Verbos de cambio — definidos primero para que _isCapabilityQuery los use ──
+    var ACTION_PAT = [
+      // Imperativo español: verbo al inicio
+      /^(arregl|cambi|modific|implement|cre[ae]\b|quit|añad|agreg|mejor|actualiz|corrig|refactor|reescrib|integr|activ|desactiv|configur|ajust|arml|ponl|sacal)/i,
+      // Interrogativa accional: verbo conjugado 2ª persona (¿arreglas/cambias/...?)
+      /\b(arreglas|cambias|modificas|implementas|corriges|mejoras|actualizas|integras|activas|configuras|ajustas|añades|creas|quitas)\b/i,
+      // "puedes + verbo de CAMBIO específico" (≠ ver/mostrar/explicar/reflexivo)
+      /pu[ea]des\s+(arreglar|cambiar|modificar|implementar|corregir|mejorar|actualizar|crear|quitar|añadir|integrar|activar|configurar|ajustar)\b/i,
+      // "quiero que / necesito que + verbo"
+      /quiero que\s+(arregles|cambies|modifiques|implementes|corrijas|mejores|actualices|crees|quites|añadas|integres)/i,
+      /necesit[ao]\s+(que\s+)?(arregl|cambi|modific|implement|corrij|mejor|actualic)/i,
+      // "auto-edítate", "evoluciónate", "auto-evoluciona"
+      /auto.?edít(ate|a)\b/i, /evoluci[oó]nate\b/i, /auto.?evoluciona\b/i,
+      // "haz el cambio", "aplica el patch/parche"
+      /h[aá]z(lo|la|me)?\s*(el\s+)?cambi/i,
+      /aplic(a|ar)\s*(el\s+)?(cambi|parche|patch)\b/i,
+      // "lo probamos" / "hacemos la prueba"
+      /\blo probamos\b/i, /\bhacemos la prueba\b/i,
+      // English: imperativo + "can you + change verb"
+      /^(fix|change|modif|implement|creat|remov|add\s|improv|updat|correct|refactor|enabl|disabl|set\s)/i,
+      /can you\s+(fix|change|modify|implement|improve|update|enable|disable|configure|correct)\b/i,
+    ];
+
+    // ── Componentes de AURA/runtime — targets explícitos de self-edit ──
+    // Si el texto referencia uno de estos, ya es un candidato a interceptar.
+    var AURA_TARGET = [
+      /\btu\s+voz\b/i,          /\btu\s+micr[oó]fono\b/i, /\btu\s+mic\b/i,
+      /\btu\s+audio\b/i,        /\btu\s+sistema\b/i,       /\btu\s+pipeline\b/i,
+      /\btu\s+memoria\b/i,      /\btu\s+m[oó]dulo\b/i,    /\btu\s+bloque\b/i,
+      /\btu\s+comportamiento\b/i, /\btu\s+runtime\b/i,     /\btu\s+respuesta\b/i,
+      /\bsistema\s+de\s+voz\b/i, /\bel\s+sistema\s+de\b/i,
+      /\bOpenAI\s+voice\b/i,    /\bvoice\s+api\b/i,        /\bwhisper\b/i,
+      /\btu\s+motor\b/i,        /\btu\s+agente\b/i,        /\btu\s+(propio\s+)?kernel\b/i,
+    ];
+
+    // ── Patrones explícitos de auto-edición/supervisión/código ──────
     var CAP = [
       // Auto-edición explícita
       /auto.?edic/i, /auto.?modif/i, /auto.?evoluci/i,
@@ -16298,45 +16332,25 @@ window.forceEnterAura = function(ev){
       /supervised.*(edit|modif|evol)/i
     ];
 
+    // Gate principal — tres capas de detección:
+    //   1. CAP: frases explícitas de auto-edición/supervisión/código
+    //   2. AURA_TARGET: referencia a componente AURA ("tu voz", "tu mic"...)
+    //   3. ACTION_PAT: verbo de cambio directo → entra al router
+    //      (la clasificación INFORM/ACCIONAL ocurre dentro, no aquí)
     function _isCapabilityQuery(text){
       var t = (text || '');
-      return CAP.some(function(p){ return p.test(t); });
+      if(CAP.some(function(p){ return p.test(t); })) return true;
+      if(AURA_TARGET.some(function(p){ return p.test(t); })) return true;
+      if(ACTION_PAT.some(function(p){ return p.test(t); })) return true;
+      return false;
     }
 
     // ── Clasificación: ACCIONAL vs INFORMATIVA ──────────────────────
     // Regla: intención de cambio > forma interrogativa.
-    // Una pregunta CON verbo de acción claro sobre AURA → ACCIONAL.
-    // Una pregunta sobre capacidad/funcionamiento     → INFORMATIVA.
-    //
-    // Evaluación: INFORM primero — SOLO bloquea formas verdaderamente
-    // informativas (cómo/qué/cuéntame/puedes-ver/reflexivos).
+    // INFORM evalúa primero — SOLO bloquea formas verdaderamente informativas.
     // Si INFORM no bloquea → ACTION decide.
-    var ACTION_PAT = [
-      // Imperativo español: verbo al inicio
-      /^(arregl|cambi|modific|implement|cre[ae]\b|quit|añad|agreg|mejor|actualiz|corrig|refactor|reescrib|integr|activ|desactiv|configur|ajust|arml|ponl|sacal)/i,
-      // Interrogativa accional: verbo conjugado 2ª persona (¿arreglas/cambias/...?)
-      /\b(arreglas|cambias|modificas|implementas|corriges|mejoras|actualizas|integras|activas|configuras|ajustas|añades|creas|quitas)\b/i,
-      // "puedes + verbo de CAMBIO específico" (≠ ver/mostrar/explicar/reflexivo)
-      /pu[ea]des\s+(arreglar|cambiar|modificar|implementar|corregir|mejorar|actualizar|crear|quitar|añadir|integrar|activar|configurar|ajustar)\b/i,
-      // "quiero que / necesito que + verbo"
-      /quiero que\s+(arregles|cambies|modifiques|implementes|corrijas|mejores|actualices|crees|quites|añadas|integres)/i,
-      /necesit[ao]\s+(que\s+)?(arregl|cambi|modific|implement|corrij|mejor|actualic)/i,
-      // "auto-edítate", "evoluciónate", "auto-evoluciona"
-      /auto.?edít(ate|a)\b/i, /evoluci[oó]nate\b/i, /auto.?evoluciona\b/i,
-      // "haz el cambio", "aplica el patch/parche"
-      /h[aá]z(lo|la|me)?\s*(el\s+)?cambi/i,
-      /aplic(a|ar)\s*(el\s+)?(cambi|parche|patch)\b/i,
-      // "lo probamos" / "hacemos la prueba" (ya está en CAP, refuerzo aquí)
-      /\blo probamos\b/i, /\bhacemos la prueba\b/i,
-      // English: imperativo + "can you + change verb"
-      /^(fix|change|modif|implement|creat|remov|add\s|improv|updat|correct|refactor|enabl|disabl|set\s)/i,
-      /can you\s+(fix|change|modify|implement|improve|update|enable|disable|configure|correct)\b/i,
-    ];
-
     // INFORM_PAT: SOLO bloquea formas donde la intención es claramente
     // informativa — NO incluye [¿?] genérico.
-    // "puedes ver/explicar/editarte" = capacidad reflexiva → informativa.
-    // "puedes modificar/arreglar" = verbo de cambio → NO bloqueado aquí.
     var INFORM_PAT = [
       /^(cómo|c[oó]mo)\b/i,                              // "cómo funciona..."
       /^(qu[eé]|cuál|cuáles|para\s+qu[eé])\b/i,           // "qué es...", "cuáles son..."
