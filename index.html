@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r19b-supervisor-fix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r19b-supervisor-fix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r19b-supervisor-fix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r20-capability-router"/>
+<meta name="aura-build" content="IndexASv5.5.4-r20-capability-router"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r20-capability-router</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r19b-supervisor-fix";var VERSION="vIndexASv5.5.4-r19b-supervisor-fix";</script>
+<script>var BUILD="IndexASv5.5.4-r20-capability-router";var VERSION="vIndexASv5.5.4-r20-capability-router";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -16162,6 +16162,44 @@ window.forceEnterAura = function(ev){
       return Object.assign(result, { parsed:parsed });
     };
 
+    // Fuente de verdad para respuesta operativa sobre capacidades de auto-edición
+    AE.explainCurrentCapability = function(){
+      var pending = typeof AE.getAwaitingReview === 'function' ? AE.getAwaitingReview() : [];
+      var AA  = window.AuraAgenticity;
+      var fld = AA && AA._domains && AA._domains['evolution'] ? AA._domains['evolution'] : null;
+      var lines = [];
+
+      lines.push('Sí, tengo capacidad de auto-edición supervisada.');
+      lines.push('');
+
+      if(pending.length > 0){
+        lines.push('Estado: '+pending.length+' propuesta(s) pendiente(s) de revisión:');
+        pending.forEach(function(p){
+          lines.push('  · ['+p.id+'] — en espera desde '+new Date(p.ts).toLocaleTimeString());
+        });
+        lines.push('');
+        lines.push('Puedes responder en lenguaje natural:');
+        lines.push('  "adelante" / "sí, aplícalo" → aprueba y ejecuta');
+        lines.push('  "no" / "cancela" → rechaza');
+        lines.push('  "espera" / "más tarde" → pausa');
+        lines.push('  "cambia X" → solicita revisión con condiciones');
+      } else {
+        lines.push('Estado actual: sin propuestas activas.');
+        lines.push('');
+        lines.push('Proceso de auto-edición supervisada:');
+        lines.push('  1. Genero una propuesta concreta y la dejo en staging.');
+        lines.push('  2. Te la muestro antes de tocar nada.');
+        lines.push('  3. Tú la revisas en lenguaje natural ("adelante", "no", "cambia X").');
+        lines.push('  4. Solo si confirmas, la aplico.');
+        if(fld) lines.push('');
+        if(fld) lines.push('[evolution] ep='+fld.executionPermission.toFixed(2)+' · sv='+fld.supervisionRequired.toFixed(2)+' · ejecución bloqueada hasta aprobación explícita');
+        lines.push('');
+        lines.push('¿Quieres que prepare una propuesta sobre algo concreto?');
+      }
+
+      return lines.join('\n');
+    };
+
     console.log('[AuraSupervisor] _evolveReview instalado en AuraEvolution');
   })();
 
@@ -16206,18 +16244,95 @@ window.forceEnterAura = function(ev){
   })();
 
   // ─────────────────────────────────────────────────────────────────
+  // _capabilityRouter — cierra el hueco entre conversación y runtime
+  // Si el usuario pregunta sobre auto-edición/supervisión/código propio
+  // y NO hay propuestas pendientes, responde con verdad operativa en
+  // lugar de dejar caer el mensaje al LLM (que responde con persona).
+  // Si sí hay propuesta pendiente, pasa al supervisor gate (ya funciona).
+  // ─────────────────────────────────────────────────────────────────
+  (function _capabilityRouter(){
+    var _orig = window.__auraProcessAuraInput;
+    if(typeof _orig !== 'function') return;
+    if(_orig.__capabilityRouted) return;
+
+    // ── Patrones de detección de intención de auto-edición/supervisión ──
+    // Conservador: solo dispara en frases claramente relacionadas con el runtime.
+    var CAP = [
+      // Auto-edición explícita
+      /auto.?edic/i, /auto.?modif/i, /auto.?evoluci/i,
+      /self.?edit/i, /self.?modif/i, /self.?evolv/i,
+      // Reflexivo + edición (te/me + verbo)
+      /modific(ar)?te\b/i, /cambi(ar)?te\b/i, /edit(ar)?te\b/i,
+      /implement(ar)?te\b/i, /program(ar)?te\b/i, /reescrib(ir)?te\b/i,
+      // Ver código / source / runtime propio
+      /tu (propio )?c[oó]digo/i, /ver (tu |el )?c[oó]digo/i,
+      /tu (propio )?(source|runtime|index)/i,
+      /ver.*(source|runtime|index\.html)/i,
+      // Supervisión + edición (combinado — evita falsos positivos)
+      /con.*(mi )?supervisi[oó]n\b/i, /bajo.*supervisi[oó]n\b/i,
+      /edici[oó]n.*supervisada/i, /evoluci[oó]n.*supervisada/i,
+      /cambio.*supervisad/i, /supervisad.*cambio/i,
+      // Staging / propuesta / apply explícito
+      /\bstaging\b/i,
+      /aplic(ar)?.*cambi/i, /aplic(ar)?.*parche/i,
+      /dejar.*pendiente.*revisi[oó]n/i,
+      // ¿Lo probamos? — solo en contexto de runtime
+      /\blo probamos\b/i, /hacemos la prueba\b/i,
+      // Capacidad interrogativa directa
+      /pu[ea]des.*(ver|modificar|cambi(ar)?te|implement|edit|evolucion|auto.?edit)/i,
+      // English
+      /can you.*(self.?edit|modify yourself|see your (code|source)|implement yourself)/i,
+      /your (code|source|runtime|index\.html)\b/i,
+      /apply.*(the )?(change|patch)\b/i,
+      /supervised.*(edit|modif|evol)/i
+    ];
+
+    function _isCapabilityQuery(text){
+      var t = (text || '');
+      return CAP.some(function(p){ return p.test(t); });
+    }
+
+    window.__auraProcessAuraInput = function(text, meta){
+      try{
+        if(_isCapabilityQuery(text)){
+          var AE = window.AuraEvolution;
+          // Solo intercepta cuando NO hay propuesta pendiente.
+          // Si hay propuesta, pasa al supervisor gate (que sí gestiona aprobaciones).
+          var hasPending = AE && typeof AE.getAwaitingReview === 'function' && AE.getAwaitingReview().length > 0;
+          if(!hasPending){
+            var reply = AE && typeof AE.explainCurrentCapability === 'function'
+              ? AE.explainCurrentCapability()
+              : 'Tengo capacidad de auto-edición supervisada, pero ahora no hay ninguna propuesta activa. Primero genero una propuesta concreta, la dejo en staging y tú la apruebas en lenguaje natural.';
+            if(typeof window.addMsg === 'function') window.addMsg('aura', reply);
+            if(window.AuraMeta) window.AuraMeta.logDecision({ decision:'allow', reason:'capabilityRouter:no-pending', source:'capabilityRouter', ts:Date.now() });
+            return Promise.resolve(true); // consumido — no llega al LLM
+          }
+        }
+      }catch(e){ /* nunca rompe el pipeline */ }
+      return _orig.apply(this, arguments);
+    };
+
+    window.__auraProcessAuraInput.__infinibitGated   = _orig.__infinibitGated   || 'gateA-v5';
+    window.__auraProcessAuraInput.__supervisorHooked = _orig.__supervisorHooked || 'supervisorGate-v1';
+    window.__auraProcessAuraInput.__capabilityRouted = 'capabilityRouter-v1';
+    window.processAuraInput = window.__auraProcessAuraInput;
+    console.log('[AuraCapabilityRouter] instalado — intercepta preguntas de auto-edición sin propuesta activa');
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
   // Registro y diagnóstico inicial
   // ─────────────────────────────────────────────────────────────────
   window.AuraKernel = window.AuraKernel || {};
   window.AuraKernel.infinibit = {
-    version:  'v1.7',
+    version:  'v1.8',
     enabled:  true,
-    modules:  ['InfiniBit','InfiniState','CollapseEngine','AuraMeta','AuraEvolution','AuraAgenticity','AuraSupervisor'],
+    modules:  ['InfiniBit','InfiniState','CollapseEngine','AuraMeta','AuraEvolution','AuraAgenticity','AuraSupervisor','AuraCapabilityRouter'],
     gates:    {
-      processInput: typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__infinibitGated,
-      supervisor:   typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__supervisorHooked,
-      handleCmd:    typeof window.handleCmd === 'function' && !!window.handleCmd.__infinibitGated,
-      voice:        typeof window.VoiceManager !== 'undefined' && !!window.VoiceManager.toggleConversation.__infinibitGated
+      processInput:      typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__infinibitGated,
+      supervisor:        typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__supervisorHooked,
+      capabilityRouter:  typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__capabilityRouted,
+      handleCmd:         typeof window.handleCmd === 'function' && !!window.handleCmd.__infinibitGated,
+      voice:             typeof window.VoiceManager !== 'undefined' && !!window.VoiceManager.toggleConversation.__infinibitGated
     },
     status:   function(){
       var d = window.AuraMeta.diagnose();
@@ -16230,8 +16345,9 @@ window.forceEnterAura = function(ev){
     }
   };
 
-  console.log('[InfiniBit v1.7] gates — pipeline:', !!window.__auraProcessAuraInput.__infinibitGated,
+  console.log('[InfiniBit v1.8] gates — pipeline:', !!window.__auraProcessAuraInput.__infinibitGated,
     '| supervisor:', !!window.__auraProcessAuraInput.__supervisorHooked,
+    '| capabilityRouter:', !!window.__auraProcessAuraInput.__capabilityRouted,
     '| cmds:', !!window.handleCmd.__infinibitGated,
     '| voz:', !!(window.VoiceManager && window.VoiceManager.toggleConversation.__infinibitGated));
 })();
