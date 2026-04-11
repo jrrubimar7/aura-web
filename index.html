@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r14-integration"/>
-<meta name="aura-build" content="IndexASv5.5.4-r14-integration"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r14-integration</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r15-phase4"/>
+<meta name="aura-build" content="IndexASv5.5.4-r15-phase4"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r15-phase4</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r14-integration";var VERSION="vIndexASv5.5.4-r14-integration";</script>
+<script>var BUILD="IndexASv5.5.4-r15-phase4";var VERSION="vIndexASv5.5.4-r15-phase4";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -15261,8 +15261,6 @@ window.forceEnterAura = function(ev){
     var CE = window.CollapseEngine;
 
     // 1. VoiceManager → speaking + listening reales
-    // VoiceManager.onStateChange está expuesto como API pública
-    // Se puede registrar antes de init() — solo empuja a _listeners[]
     try{
       window.VoiceManager.onStateChange(function(next, prev){
         try{
@@ -15278,6 +15276,8 @@ window.forceEnterAura = function(ev){
               IS.update('listening', { amplitude:0.05, coherence:1.0,  uncertainty:0.05 });
               break;
             case STATES.PROCESSING:
+              // PROCESSING de voz → thinking activo, pero NO marca _turnInFlight
+              // (solo aura:turn:start marca el turn formal de pipeline)
               IS.update('thinking',  { amplitude:0.75, coherence:0.8,  uncertainty:0.2,  mode:'continuous' });
               IS.update('listening', { amplitude:0.1,  coherence:0.9,  uncertainty:0.1 });
               break;
@@ -15287,28 +15287,34 @@ window.forceEnterAura = function(ev){
               IS.update('listening', { amplitude:0.0,  coherence:1.0,  uncertainty:0.05, mode:'contextual' });
               break;
             case STATES.ERROR:
+            case STATES.SUSPENDED:
               IS.update('listening', { amplitude:0.2,  coherence:0.3,  uncertainty:0.8,  mode:'mixed' });
               IS.update('speaking',  { amplitude:0.2,  coherence:0.3,  uncertainty:0.8,  mode:'mixed' });
-              MA.observe({ state:IS.snapshot(), errors:['VoiceManager:ERROR from '+prev] });
+              MA.observe({ state:IS.snapshot(), errors:['VoiceManager:'+next+' from '+prev] });
               break;
           }
         }catch(e){}
       });
     }catch(e){ console.warn('[InfiniBit] VoiceManager.onStateChange no disponible:', e); }
 
-    // 2. aura:turn:* — CollapseEngine detecta colisiones de turn
+    // 2. aura:turn:* — _turnInFlight flag (fix bug de falso positivo)
+    // Solo se marca como "turn en vuelo" cuando el pipeline formal dispara,
+    // no cuando VoiceManager pasa por PROCESSING. Así CollapseEngine
+    // solo detecta colisión real (dos turns del pipeline solapados).
+    var _turnInFlight = false;
+
     window.addEventListener('aura:turn:start', function(ev){
       try{
-        // CollapseEngine: si thinking ya estaba activo → posible colisión
-        var wasActive = CE.shouldAct(IS.thinking);
-        if(wasActive){
+        // Colisión real: solo si había un turn formal previo en vuelo
+        if(_turnInFlight && CE.shouldAct(IS.thinking)){
           MA.observe({
             state:       IS.snapshot(),
-            errors:      ['turn:start colisión — thinking ya activo'],
+            errors:      ['turn:start colisión real — pipeline solapado'],
             performance: { collision:true }
           });
-          console.warn('[InfiniBit] CollapseEngine detectó turn:start con thinking activo (posible colisión)');
+          console.warn('[InfiniBit] CollapseEngine: turn solapado detectado');
         }
+        _turnInFlight = true;
         IS.update('thinking', { amplitude:0.9, coherence:0.8, uncertainty:0.15, mode:'continuous' });
         MA.observe({ state:IS.snapshot(), errors:[] });
       }catch(e){}
@@ -15316,6 +15322,7 @@ window.forceEnterAura = function(ev){
 
     window.addEventListener('aura:turn:end', function(ev){
       try{
+        _turnInFlight = false;
         IS.update('thinking', { amplitude:0.1, coherence:1.0, uncertainty:0.05, mode:'contextual' });
         MA.observe({ state:IS.snapshot(), errors:[] });
       }catch(e){}
@@ -15323,6 +15330,7 @@ window.forceEnterAura = function(ev){
 
     window.addEventListener('aura:turn:error', function(ev){
       try{
+        _turnInFlight = false;
         var err = (ev && ev.detail && ev.detail.error) ? [String(ev.detail.error)] : ['unknown'];
         IS.update('thinking', { amplitude:0.2, coherence:0.3, uncertainty:0.8, mode:'mixed' });
         MA.observe({ state:IS.snapshot(), errors:err });
@@ -15331,18 +15339,103 @@ window.forceEnterAura = function(ev){
   })();
 
   // ─────────────────────────────────────────────────────────────────
+  // Gate — InfiniBit como autoridad real sobre __auraProcessAuraInput
+  // Fase 4: de observación → control parcial
+  // ─────────────────────────────────────────────────────────────────
+  // __auraProcessAuraInput NO está congelado por aura-final-certification-v14.
+  // Se puede wrappear aquí de forma segura.
+  (function _gate(){
+    var _orig = window.__auraProcessAuraInput;
+    if(typeof _orig !== 'function'){
+      console.warn('[InfiniBit gate] __auraProcessAuraInput no encontrado — gate no instalado');
+      return;
+    }
+
+    window.__auraProcessAuraInput = function(text, meta){
+      try{
+        if(window.AuraMeta && window.InfiniState && window.CollapseEngine){
+          var IS  = window.InfiniState;
+          var CE  = window.CollapseEngine;
+          var MA  = window.AuraMeta;
+
+          // --- GATE 1: busy_stuck + incoherencia → auto-recuperación ---
+          // CollapseEngine evalúa el estado actual de thinking.
+          // Si el score es bajo (sistema incoherente) Y hay busy_stuck,
+          // InfiniBit interviene: libera locks y limpia el estado antes
+          // de permitir el nuevo input.
+          var diag = MA.diagnose();
+          var stuckIssue = diag.issues.find(function(i){ return i.type === 'busy_stuck'; });
+          var thinkingScore = CE.collapse(IS.thinking);
+
+          if(stuckIssue && thinkingScore < 0.3){
+            // InfiniBit detecta sistema atascado con baja coherencia.
+            // Acción: auto-recuperación antes de procesar el nuevo input.
+            console.warn('[InfiniBit gate] busy_stuck + incoherencia (score=' + thinkingScore.toFixed(2) + ') — auto-recuperando');
+            try{
+              if(window.AuraState && typeof window.AuraState.set === 'function'){
+                window.AuraState.set('busy', false);
+              }
+              if(window.S) window.S.busy = false;
+              if(typeof window.removeTyping === 'function') window.removeTyping();
+              // Intentar liberar AuraLock si está bloqueado
+              try{
+                if(window.AuraLock && typeof window.AuraLock.release === 'function'){
+                  window.AuraLock.release('InfiniBitGate');
+                }
+              }catch(_e){}
+            }catch(e){}
+
+            IS.update('thinking', { amplitude:0.15, coherence:0.85, uncertainty:0.2, mode:'contextual' });
+            window.__auraBusySince = null;
+
+            MA.observe({
+              state:       IS.snapshot(),
+              errors:      [],
+              performance: { gate:'auto-recovery', elapsed:stuckIssue.elapsed, thinkingScore:thinkingScore }
+            });
+
+            // Toast solo si disponible
+            try{ if(typeof window.toast === 'function') window.toast('⟳ AURA recuperada'); }catch(e){}
+          }
+
+          // --- GATE 2: uncertainty extrema → registrar degradación ---
+          // No bloquea (el usuario necesita respuesta), pero lo registra.
+          if(IS.thinking.uncertainty > 0.85){
+            MA.observe({
+              state:  IS.snapshot(),
+              errors: ['gate:alta-incertidumbre:' + IS.thinking.uncertainty.toFixed(2)]
+            });
+          }
+        }
+      }catch(e){
+        // El gate NUNCA debe romper el pipeline
+        console.error('[InfiniBit gate] excepción interna (ignorada):', e);
+      }
+
+      // Siempre ejecutar el pipeline original
+      return _orig.apply(this, arguments);
+    };
+
+    // Sincronizar alias (processAuraInput apunta al mismo fn)
+    window.processAuraInput = window.__auraProcessAuraInput;
+    window.__auraProcessAuraInput.__infinibitGated = true;
+
+    console.log('[InfiniBit gate] instalado sobre __auraProcessAuraInput');
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
   // Registro y diagnóstico inicial
   // ─────────────────────────────────────────────────────────────────
   window.AuraKernel = window.AuraKernel || {};
   window.AuraKernel.infinibit = {
-    version:  'v1',
+    version:  'v1.4',
     enabled:  true,
     modules:  ['InfiniBit','InfiniState','CollapseEngine','AuraMeta','AuraEvolution'],
-    // shortcut diagnóstico
+    gated:    typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__infinibitGated,
     status:   function(){ return window.AuraMeta.diagnose(); }
   };
 
-  console.log('[InfiniBit v1] online — InfiniState, CollapseEngine, AuraMeta, AuraEvolution listos');
+  console.log('[InfiniBit v1.4] online — gate activo:', !!window.__auraProcessAuraInput.__infinibitGated);
 })();
 </script>
 
