@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r10-hotfix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r10-hotfix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r10-hotfix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r11-hotfix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r11-hotfix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r11-hotfix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r10-hotfix";var VERSION="vIndexASv5.5.4-r10-hotfix";</script>
+<script>var BUILD="IndexASv5.5.4-r11-hotfix";var VERSION="vIndexASv5.5.4-r11-hotfix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -9703,11 +9703,11 @@ var VoiceManager = (function() {
       _killMic('punctual');
       _setMicUI(false);
     }
-    // r10: cancelar TTS primero, luego unlock, luego _startRec() síncronamente
-    // _waitForSynthSilence + setTimeout sacaba r.start() del contexto de gesto de usuario
-    // (iOS Safari y algunas versiones de Android Chrome lo silencian por eso)
+    // r11: NO llamar _unlockAudio() aquí — speechSynthesis.speak() pone el audio en
+    // modo "output" y bloquea el SpeechRecognition en Android/iOS. El AudioContext
+    // ya está desbloqueado desde la primera interacción (document listener en wireUI).
+    // Solo cancelar TTS si estaba sonando (para liberar audio antes del mic).
     try{ var _s = synth(); if(_s){ _s.cancel(); } }catch(e){}
-    _unlockAudio(); // resume AudioContext + utterance vacío volumen 0 para desbloquear
     _muted = false;
     _convMode = true;
     _errorCount = 0;
@@ -9795,9 +9795,10 @@ var VoiceManager = (function() {
 
   function init(){
     var saved = localStorage.getItem('a_muted');
-    // Sin valor guardado → arranca en mute por defecto
-    _muted = (saved !== '0'); // true a menos que el usuario haya guardado explícitamente '0'
-    if(_muted) try{ localStorage.setItem('a_muted','1'); }catch(e){}
+    // r11: default DESMUTADO — AURA habla por defecto como cualquier asistente de voz.
+    // Solo silenciar si el usuario lo ha pedido explícitamente (saved === '1').
+    _muted = (saved === '1');
+    if(!_muted) try{ localStorage.setItem('a_muted','0'); }catch(e){}
     if(window.S){ window.S.muted = _muted; }
     if(document.readyState === 'loading'){
       document.addEventListener('DOMContentLoaded', function(){ _renderUI(); });
