@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r26-voice-controller"/>
-<meta name="aura-build" content="IndexASv5.5.4-r26-voice-controller"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r26-voice-controller</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r27-android-voice-fix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r27-android-voice-fix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r27-android-voice-fix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r26-voice-controller";var VERSION="vIndexASv5.5.4-r26-voice-controller";</script>
+<script>var BUILD="IndexASv5.5.4-r27-android-voice-fix";var VERSION="vIndexASv5.5.4-r27-android-voice-fix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -8794,7 +8794,7 @@ var VoiceManager = (function() {
   var _processingStartTs = 0; // para detectar PROCESSING stuck
 
   // -- Constantes de timing -------------------------------------------------
-  var ECHO_GUARD_MS    = 480;   // 5.6: aumentado 600→700ms para Android Chrome
+  var ECHO_GUARD_MS    = 700;   // r27: corregido a 700ms para Android Chrome (5.6 nunca actualizó el valor)
   var COOLDOWN_MS      = 900;
   var RESUME_IVL       = 5000;
   var PROC_TIMEOUT     = 25000;
@@ -8952,7 +8952,10 @@ var VoiceManager = (function() {
           _mode = 'none';
           setState(_convMode ? ST.COOLDOWN : ST.IDLE);
         }
-        setTimeout(cb, 120);
+        // r27: 120ms → 500ms — Android necesita más tiempo tras synth.cancel()
+        // para liberar el audio subsystem antes de que STT pueda arrancar.
+        // 120ms causaba audio-capture / aborted en SpeechRecognition en Android Chrome.
+        setTimeout(cb, 500);
         return;
       }
       setTimeout(function(){ _waitForSynthSilence(cb, attempts - 1); }, 250);
@@ -8965,6 +8968,11 @@ var VoiceManager = (function() {
     if(token !== _token) return;
     _clearManualButton();
     _mode = 'none';
+    // r27: cancelar synth explícitamente al terminar TTS — libera el audio lock
+    // de Android Chrome antes de que _startCooldown comience a sondear.
+    // Sin esto, synth.speaking queda true 200-600ms extra y _waitForSynthSilence
+    // tiene que esperar o forzar un cancel 3.5s después con solo 120ms de margen.
+    try{ var _fs = synth(); if(_fs) _fs.cancel(); }catch(_fse){}
     if(_state !== ST.PAUSED) setState(ST.COOLDOWN);
     if(onDone) try{ onDone(); }catch(e){}
     _startCooldown();
