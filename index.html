@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r17-voice-gate"/>
-<meta name="aura-build" content="IndexASv5.5.4-r17-voice-gate"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r17-voice-gate</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r18-agenticity"/>
+<meta name="aura-build" content="IndexASv5.5.4-r18-agenticity"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r18-agenticity</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r17-voice-gate";var VERSION="vIndexASv5.5.4-r17-voice-gate";</script>
+<script>var BUILD="IndexASv5.5.4-r18-agenticity";var VERSION="vIndexASv5.5.4-r18-agenticity";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -9981,6 +9981,15 @@ window._jarvisToggle = window.jarvisToggle;
         lines.push('A. ESTADO GENERAL');
         lines.push('  '+gState+(issues.length?' — '+issues.length+' issue(s)':''));
         lines.push('  Gates activos: '+gateStr);
+        // Agenticity global
+        try{
+          var aa=window.AuraAgenticity;
+          if(aa && aa._globalField){
+            var gf=aa._globalField;
+            var doms=Object.keys(aa._domains||{});
+            lines.push('  Agenticity: ['+gf.mode+'] ep='+gf.executionPermission.toFixed(2)+' sv='+gf.supervisionRequired.toFixed(2)+(doms.length?' | dominios: '+doms.join(', '):''));
+          }
+        }catch(e){}
         if(issues.length){
           issues.forEach(function(i){
             lines.push('  · ['+i.type+'] '+(i.info||JSON.stringify(i)));
@@ -15681,6 +15690,198 @@ window.forceEnterAura = function(ev){
     window.toggleMic     = function(){ return VM.toggleDirectMic(); };
 
     console.log('[InfiniBit gateC] activo — toggleConversation + startVoice');
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
+  // AuraAgenticity — extensión graduada (campo no-binario)
+  // Extiende el AuraAgenticity ya existente (modos AGENT/NON_AGENT/SUPERPOSED).
+  // No lo reemplaza — añade campo graduado + dominios + conexión con AuraEvolution.
+  //
+  // Régimen:
+  //   non-agentic-total      — solo observa, diagnostica y propone. No ejecuta.
+  //   non-agentic-not-total  — prepara, estructura, simula. No ejecuta sin aprobación.
+  //   im-partial             — prioriza y justifica. Grado de implicación trazable.
+  //   a-total                — distintos subsistemas en regímenes distintos a la vez.
+  // ─────────────────────────────────────────────────────────────────
+  (function _extendAgenticity(){
+    var AA = window.AuraAgenticity;
+    if(!AA){
+      console.warn('[AuraAgenticity ext] AuraAgenticity no disponible — extensión no instalada');
+      return;
+    }
+    if(AA._extended){ return; } // idempotente
+    AA._extended = true;
+
+    // Modos extendidos (conviven con los 3 originales)
+    AA.FIELD_MODES = {
+      NON_AGENTIC_TOTAL:     'non-agentic-total',
+      NON_AGENTIC_NOT_TOTAL: 'non-agentic-not-total',
+      IM_PARTIAL:            'im-partial',
+      A_TOTAL:               'a-total'
+    };
+
+    // Campo global por defecto — conservador
+    AA._globalField = {
+      mode:                'non-agentic-not-total',
+      intervention:        0.2,
+      autonomy:            0.15,
+      supervisionRequired: 0.9,
+      reversibility:       0.95,
+      executionPermission: 0.05,
+      partiality:          0.5
+    };
+
+    // Campos por dominio — cada subsistema puede operar en régimen distinto
+    AA._domains = {};
+
+    // ── API pública ───────────────────────────────────────────────
+
+    AA.registerDomain = function(name, cfg){
+      cfg = cfg || {};
+      AA._domains[name] = Object.assign({
+        mode:                'non-agentic-total',
+        intervention:        0.1,
+        autonomy:            0.05,
+        supervisionRequired: 0.98,
+        reversibility:       1.0,
+        executionPermission: 0.0,
+        partiality:          0.5
+      }, cfg);
+      return AA._domains[name];
+    };
+
+    AA.getField = function(domain){
+      if(domain && AA._domains[domain]) return AA._domains[domain];
+      return AA._globalField;
+    };
+
+    // Permiso de propuesta (diagnóstico + staging)
+    AA.canPropose = function(domain){
+      var f = AA.getField(domain);
+      return f.intervention > 0 || f.executionPermission > 0;
+    };
+
+    // Permiso de staging (preparar diff, simular, estructurar)
+    AA.canStage = function(domain){
+      var f = AA.getField(domain);
+      var m = f.mode;
+      return m === 'non-agentic-not-total' || m === 'im-partial' || m === 'a-total';
+    };
+
+    // Permiso de ejecución real (threshold doble: ep alto Y sv bajo)
+    AA.canExecute = function(domain){
+      var f = AA.getField(domain);
+      return f.executionPermission > 0.5 && f.supervisionRequired < 0.5;
+    };
+
+    // Cambiar modo de un dominio (o global)
+    AA.setMode = function(mode, domain){
+      var valid = Object.values(AA.FIELD_MODES);
+      if(valid.indexOf(mode) === -1){ console.warn('[AuraAgenticity] modo inválido:', mode); return false; }
+      var target = domain ? (AA._domains[domain] = AA._domains[domain] || AA.registerDomain(domain)) : AA._globalField;
+      target.mode = mode;
+      AA._applyModeDefaults(target, mode);
+      console.log('[AuraAgenticity] setMode →', mode, domain ? ('domain='+domain) : '(global)');
+      return true;
+    };
+
+    // Defaults de campo según modo
+    AA._applyModeDefaults = function(field, mode){
+      switch(mode){
+        case 'non-agentic-total':
+          field.intervention=0.05; field.autonomy=0.05;
+          field.supervisionRequired=0.98; field.executionPermission=0.0; field.reversibility=1.0; break;
+        case 'non-agentic-not-total':
+          field.intervention=0.3; field.autonomy=0.2;
+          field.supervisionRequired=0.85; field.executionPermission=0.12; field.reversibility=0.95; break;
+        case 'im-partial':
+          field.intervention=0.55; field.autonomy=0.4;
+          field.supervisionRequired=0.6; field.executionPermission=0.35; field.reversibility=0.75; break;
+        case 'a-total':
+          field.intervention=0.3; field.autonomy=0.3;
+          field.supervisionRequired=0.7; field.executionPermission=0.2; field.reversibility=0.85; break;
+      }
+    };
+
+    AA.snapshot = function(){
+      return {
+        global:  Object.assign({}, AA._globalField),
+        domains: Object.keys(AA._domains).reduce(function(acc,k){
+          acc[k] = Object.assign({}, AA._domains[k]); return acc;
+        }, {})
+      };
+    };
+
+    // ── Registro de dominios base ─────────────────────────────────
+
+    // Dominio de auto-edición — staging habilitado, ejecución requiere {confirmed:true} de JR
+    AA.registerDomain('evolution', {
+      mode:                'non-agentic-not-total',
+      intervention:        0.3,
+      autonomy:            0.15,
+      supervisionRequired: 0.9,
+      reversibility:       0.95,
+      executionPermission: 0.1,
+      partiality:          0.5,
+      note: 'Auto-edición supervisada. Staging OK. Ejecución requiere confirmed:true de JR.'
+    });
+
+    // Dominio económico-operativo — solo observación, ejecución CERO
+    // Base para futuro módulo de trading supervisado. Bloqueado hasta supervisión explícita.
+    AA.registerDomain('economic', {
+      mode:                'non-agentic-total',
+      intervention:        0.0,
+      autonomy:            0.0,
+      supervisionRequired: 1.0,
+      reversibility:       1.0,
+      executionPermission: 0.0,
+      partiality:          0.5,
+      note: 'Módulo económico-operativo: solo observación. Cero ejecución. Bloqueado hasta supervisión explícita de JR.'
+    });
+
+    // ── Conexión con AuraEvolution ────────────────────────────────
+    // propose() verifica canPropose(domain)
+    // apply()   verifica canExecute(domain) — capa adicional sobre confirmed:true
+    if(window.AuraEvolution){
+      var _origPropose = window.AuraEvolution.propose;
+      window.AuraEvolution.propose = function(opts){
+        opts = opts || {};
+        var domain = opts.domain || 'evolution';
+        if(!AA.canPropose(domain)){
+          var f = AA.getField(domain);
+          console.warn('[AuraEvolution] propose bloqueado — agenticity domain='+domain+' ep='+f.executionPermission);
+          return null;
+        }
+        var id = _origPropose.apply(this, arguments);
+        // Etiquetar propuesta con snapshot de campo
+        if(id !== null){
+          var p = this._proposals.find(function(x){ return x.id===id; });
+          if(p){ p.domain=domain; p._agenticity=AA.getField(domain) ? Object.assign({},AA.getField(domain)) : null; }
+        }
+        return id;
+      };
+
+      var _origApply = window.AuraEvolution.apply;
+      window.AuraEvolution.apply = function(id, opts){
+        opts = opts || {};
+        if(!opts.confirmed) return { ok:false, reason:'confirmation required' };
+        var p = this._proposals.find(function(x){ return x.id===id; });
+        var domain = (p && p.domain) ? p.domain : 'evolution';
+        if(!AA.canExecute(domain)){
+          var f = AA.getField(domain);
+          return {
+            ok:      false,
+            reason:  'agenticity:blocked — domain='+domain+' executionPermission='+f.executionPermission+' supervisionRequired='+f.supervisionRequired,
+            field:   Object.assign({},f)
+          };
+        }
+        return _origApply.apply(this, arguments);
+      };
+
+      console.log('[AuraAgenticity ext] AuraEvolution conectado — propose+apply gateados');
+    }
+
+    console.log('[AuraAgenticity ext] campo graduado instalado — dominios:', Object.keys(AA._domains).join(', '));
   })();
 
   // ─────────────────────────────────────────────────────────────────
