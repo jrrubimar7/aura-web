@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r18-agenticity"/>
-<meta name="aura-build" content="IndexASv5.5.4-r18-agenticity"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r18-agenticity</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r19-supervisor"/>
+<meta name="aura-build" content="IndexASv5.5.4-r19-supervisor"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r19-supervisor</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r18-agenticity";var VERSION="vIndexASv5.5.4-r18-agenticity";</script>
+<script>var BUILD="IndexASv5.5.4-r19-supervisor";var VERSION="vIndexASv5.5.4-r19-supervisor";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -10004,6 +10004,17 @@ window._jarvisToggle = window.jarvisToggle;
           lines.push('  '+k.padEnd(9)+' '+bar(score(b))+'  ['+label(b)+']');
         });
         lines.push('  obs: '+window.AuraMeta._log.length+' | anomalías: '+window.AuraMeta.anomalies().length);
+        // Supervisor pending proposals
+        try{
+          var ae=window.AuraEvolution;
+          if(ae && typeof ae.getAwaitingReview==='function'){
+            var pending=ae.getAwaitingReview();
+            if(pending.length){
+              lines.push('  ⟳ '+pending.length+' propuesta(s) pendiente(s) de revisión:');
+              pending.forEach(function(p){ lines.push('    · ['+p.id+'] '+new Date(p.ts).toLocaleTimeString()); });
+            }
+          }
+        }catch(e){}
         lines.push('');
 
         // ── C. GATE — decisiones recientes ───────────────────────
@@ -15885,15 +15896,295 @@ window.forceEnterAura = function(ev){
   })();
 
   // ─────────────────────────────────────────────────────────────────
+  // AuraSupervisor — supervisión en lenguaje natural
+  // r19-supervisor: parse NL → {intent, confidence, reason, constraints}
+  // ─────────────────────────────────────────────────────────────────
+  (function _installAuraSupervisor(){
+    if(window.AuraSupervisor && window.AuraSupervisor._installed) return;
+
+    var APPROVE_PATTERNS = [
+      /\badelante\b/i, /\baprueb[ao]\b/i, /\bconfirm[ao]\b/i,
+      /\bsí[,\s]/i, /^sí[.!]?$/i, /\bprocede\b/i, /\bejec[uú]talo\b/i,
+      /\baplicalo\b/i, /\bapl[ií]ca(lo)?\b/i, /\bhazlo\b/i, /\bdale\b/i,
+      /\bva[,\s]/i, /^va[.!]?$/i, /\bperfecto[,\s.!]/i, /^perfecto[.!]?$/i,
+      /\bde acuerdo\b/i, /\baprobado\b/i, /\bok[,\s.!]/i, /^ok[.!]?$/i,
+      /\bok\b/i, /\bapprove\b/i, /\baccept\b/i, /\bconfirm\b/i,
+      /\bgo ahead\b/i, /\byes\b/i, /\bafirmativo\b/i, /\bcorrecto\b/i,
+      /\bestá bien\b/i, /\bme parece bien\b/i, /\bhaz el cambio\b/i,
+      /\bimplementa(lo)?\b/i
+    ];
+
+    var REJECT_PATTERNS = [
+      /\bno[,\s.!]/i, /^no[.!]?$/i, /\bcancela\b/i, /\bcancel\b/i,
+      /\bnot yet\b/i, /\bdetén\b/i, /\brechaz[ao]\b/i, /\brevert\b/i,
+      /\bdesech[ao]\b/i, /\bnada de eso\b/i, /\bni hablar\b/i,
+      /\bno lo hagas\b/i, /\bno apliques\b/i, /\bno ejecutes\b/i,
+      /\breject\b/i, /\bdeny\b/i, /\bdiscard\b/i, /\babort\b/i,
+      /\bolvídalo\b/i, /\bdeja así\b/i, /\bno gracias\b/i,
+      /\bno quiero\b/i, /\bno procede\b/i
+    ];
+
+    var HOLD_PATTERNS = [
+      /\bespera\b/i, /\bmás tarde\b/i, /\bdespués\b/i, /\bahorita no\b/i,
+      /\bpause\b/i, /\bhold\b/i, /\bhold on\b/i, /\bwait\b/i,
+      /\ben pausa\b/i, /\bno ahora\b/i, /\blo pienso\b/i,
+      /\bdeja pendiente\b/i, /\bdéjalo pendiente\b/i, /\bno todavía\b/i,
+      /\bpospón\b/i, /\bposponer\b/i
+    ];
+
+    var REVISE_PATTERNS = [
+      /\bcambia\b/i, /\bmodifica\b/i, /\bajusta\b/i, /\brevisa\b/i,
+      /\bno así\b/i, /\bsalvo\b/i, /\bexcept[o ]?\b/i,
+      /\bsin incluir\b/i, /\bsin la parte\b/i, /\bquita\b/i,
+      /\bquitar\b/i, /\bno incluyas\b/i, /\brevise\b/i, /\bmodify\b/i,
+      /\bchange\b/i, /\badjust\b/i, /\bbut without\b/i,
+      /\bbut change\b/i, /\bexcluding\b/i, /\bpero sin\b/i,
+      /\bpero no\b/i, /\bcon la condición\b/i
+    ];
+
+    var APPROVE_PARTIAL_PATTERNS = [
+      /\bsolo parte\b/i, /\bsólo parte\b/i, /\bapruebo parte\b/i,
+      /\baprueba solo\b/i, /\baprueba sólo\b/i, /\bparte sí\b/i,
+      /\bapruebo esto[, ]+pero no\b/i, /\bapprove partial\b/i,
+      /\bonly part\b/i, /\bpartially\b/i, /\bparcialmente\b/i,
+      /\blo básico sí\b/i
+    ];
+
+    // Frases ambiguas — NUNCA cuentan como aprobación
+    var AMBIGUOUS = [
+      /\bpuede ser\b/i, /\bhaz lo que quieras\b/i, /\bya veremos\b/i,
+      /\btal vez\b/i, /\bquizás\b/i, /\bquizas\b/i, /\bno sé\b/i,
+      /\bcomo quieras\b/i, /\bsi tú lo ves bien\b/i, /\blo que sea\b/i,
+      /\bsupongo\b/i, /\ba ver\b/i, /\bmmm+\b/i, /\bhmm+\b/i,
+      /\bdepende\b/i, /\bno tengo claro\b/i, /\bmaybe\b/i,
+      /\bperhaps\b/i, /\bwhatever\b/i, /\bi don'?t know\b/i,
+      /\bup to you\b/i, /\bif you think so\b/i
+    ];
+
+    function _testPatterns(msg, patterns){
+      return patterns.some(function(p){ return p.test(msg); });
+    }
+
+    function _countMatches(msg, patterns){
+      return patterns.filter(function(p){ return p.test(msg); }).length;
+    }
+
+    function _extractConstraints(msg){
+      var c = {};
+      if(/\bsin voz\b|\bno voice\b|\bexclude voice\b/i.test(msg)) c.excludeVoice = true;
+      if(/\bsin ui\b|\bno ui\b|\bsin interfaz\b|\bexclude ui\b/i.test(msg)) c.excludeUI = true;
+      if(/\bsolo patch\b|\bonly patch\b|\bpatch only\b|\bsolo el parche\b/i.test(msg)) c.onlyPatch = true;
+      if(/\bcon rollback\b|\bwith rollback\b|\bque sea reversible\b|\brollback\b/i.test(msg)) c.withRollback = true;
+      if(/\bes staging\b|\ben staging\b|\bstaging only\b|\bsolo staging\b|\bno a producción\b/i.test(msg)) c.stagingOnly = true;
+      if(/\brevisa primero\b|\brevisar primero\b|\breview first\b|\bverifica antes\b|\bcomprueba antes\b/i.test(msg)) c.reviewFirst = true;
+      return c;
+    }
+
+    function _parse(message, ctx){
+      var msg    = (message || '').trim();
+      var result = { intent:'unclear', confidence:0, reason:'sin patrón claro', constraints:{} };
+      if(!msg) return result;
+
+      // Ambiguous check first — these NEVER become approve
+      if(_testPatterns(msg, AMBIGUOUS)){
+        return {
+          intent:'unclear', confidence:0.4,
+          reason:'expresión ambigua — no cuenta como aprobación',
+          constraints: _extractConstraints(msg)
+        };
+      }
+
+      var constraints = _extractConstraints(msg);
+
+      var scores = {
+        approve:         _countMatches(msg, APPROVE_PATTERNS),
+        reject:          _countMatches(msg, REJECT_PATTERNS),
+        hold:            _countMatches(msg, HOLD_PATTERNS),
+        revise:          _countMatches(msg, REVISE_PATTERNS),
+        approve_partial: _countMatches(msg, APPROVE_PARTIAL_PATTERNS)
+      };
+
+      var best = 'unclear'; var bestScore = 0;
+      Object.keys(scores).forEach(function(k){
+        if(scores[k] > bestScore){ bestScore = scores[k]; best = k; }
+      });
+
+      // approve+revise conflict → revise (partial with conditions)
+      if(scores.approve > 0 && scores.revise > 0){
+        best = 'revise';
+        bestScore = scores.revise + scores.approve;
+      }
+      // approve+partial → approve_partial
+      if(scores.approve > 0 && scores.approve_partial > 0){
+        best = 'approve_partial';
+      }
+
+      // Confidence: 1 match→0.65, 2→0.80, 3+→0.95
+      var conf = bestScore >= 3 ? 0.95 : bestScore === 2 ? 0.80 : bestScore === 1 ? 0.65 : 0.30;
+      // Context boost when proposal is pending
+      if(ctx && ctx.hasPending && best !== 'unclear') conf = Math.min(0.98, conf + 0.05);
+
+      result.intent      = best;
+      result.confidence  = conf;
+      result.constraints = constraints;
+      result.reason      = best === 'unclear'
+        ? 'mensaje no relacionado con supervisión'
+        : 'clasificado como "'+best+'" ('+bestScore+' patrón(es), conf='+conf.toFixed(2)+')';
+      return result;
+    }
+
+    window.AuraSupervisor = { _installed:true, parse:_parse, _ambiguousList:AMBIGUOUS };
+    console.log('[AuraSupervisor] instalado — parse(msg,ctx) disponible');
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
+  // _evolveReview — AuraEvolution review API
+  // Añade: notifyPendingProposal, approve, reject, hold,
+  //        requestRevision, reviewFromNL, getAwaitingReview
+  // ─────────────────────────────────────────────────────────────────
+  (function _evolveReview(){
+    var AE = window.AuraEvolution;
+    if(!AE || AE._reviewInstalled) return;
+    AE._reviewInstalled = true;
+    AE._awaitingReview  = {};
+
+    AE.notifyPendingProposal = function(id){
+      var staged = null;
+      if(AE.list) staged = AE.list().find(function(p){ return p.id===id; }) || null;
+      if(!staged && AE._staged) staged = AE._staged[id] || null;
+      AE._awaitingReview[id] = { id:id, proposal:staged, status:'awaiting', ts:Date.now(), history:[] };
+      if(window.InfiniState) window.InfiniState.update('evolving', { amplitude:0.7, uncertainty:0.35, coherence:0.75, mode:'superposition' });
+      console.log('[AuraSupervisor] propuesta pendiente notificada:', id);
+    };
+
+    AE.getAwaitingReview = function(){
+      return Object.values(AE._awaitingReview).filter(function(r){ return r.status==='awaiting'; });
+    };
+
+    function _transition(id, newStatus, meta){
+      var entry = AE._awaitingReview[id];
+      if(!entry) return { ok:false, reason:'propuesta no encontrada: '+id };
+      entry.history.push({ status:entry.status, ts:Date.now() });
+      entry.status = newStatus;
+      entry.meta   = meta || {};
+      if(window.AuraMeta) window.AuraMeta.observe({ events:['proposal:'+newStatus+':'+id], performance:{} });
+      return { ok:true, id:id, status:newStatus };
+    }
+
+    AE.approve = function(id, meta){
+      var res = _transition(id, 'approved', meta);
+      if(!res.ok) return res;
+      // Elevate agenticity temporarily to permit execution
+      if(window.AuraAgenticity && window.AuraAgenticity.setMode) window.AuraAgenticity.setMode('im-partial','evolution');
+      var applied = AE.apply ? AE.apply({ id:id, confirmed:true }) : { ok:false, reason:'apply no disponible' };
+      // Restore conservative agenticity
+      if(window.AuraAgenticity && window.AuraAgenticity.setMode) window.AuraAgenticity.setMode('non-agentic-not-total','evolution');
+      delete AE._awaitingReview[id];
+      if(window.InfiniState) window.InfiniState.update('evolving', { amplitude:0.3, uncertainty:0.15, coherence:0.95, mode:'contextual' });
+      return Object.assign(res, { applied:applied });
+    };
+
+    AE.reject = function(id, meta){
+      var res = _transition(id, 'rejected', meta);
+      if(!res.ok) return res;
+      delete AE._awaitingReview[id];
+      if(window.InfiniState) window.InfiniState.update('evolving', { amplitude:0.1, uncertainty:0.1, coherence:1.0, mode:'contextual' });
+      return res;
+    };
+
+    AE.hold = function(id, meta){
+      var res = _transition(id, 'hold', meta);
+      if(!res.ok) return res;
+      AE._awaitingReview[id].status = 'hold'; // keep but not 'awaiting'
+      if(window.InfiniState) window.InfiniState.update('evolving', { amplitude:0.4, uncertainty:0.5, coherence:0.6, mode:'superposition' });
+      return res;
+    };
+
+    AE.requestRevision = function(id, meta){
+      var res = _transition(id, 'revision_requested', meta);
+      if(!res.ok) return res;
+      delete AE._awaitingReview[id];
+      if(window.InfiniState) window.InfiniState.update('evolving', { amplitude:0.5, uncertainty:0.4, coherence:0.7, mode:'contextual' });
+      return res;
+    };
+
+    AE.reviewFromNL = function(message, id){
+      if(!window.AuraSupervisor) return { ok:false, reason:'AuraSupervisor no disponible' };
+      var pending  = AE.getAwaitingReview();
+      var targetId = id || (pending.length > 0 ? pending[0].id : null);
+      if(!targetId) return { ok:false, reason:'sin propuestas pendientes' };
+
+      var parsed = window.AuraSupervisor.parse(message, { hasPending:true });
+      if(parsed.confidence < 0.65 || parsed.intent === 'unclear'){
+        return { ok:false, reason:'intención poco clara (conf='+parsed.confidence.toFixed(2)+')', parsed:parsed, requiresExplicit:true };
+      }
+
+      var result;
+      switch(parsed.intent){
+        case 'approve':         result = AE.approve(targetId, { nl:message, parsed:parsed }); break;
+        case 'reject':          result = AE.reject(targetId, { nl:message, parsed:parsed }); break;
+        case 'hold':            result = AE.hold(targetId, { nl:message, parsed:parsed }); break;
+        case 'revise':          result = AE.requestRevision(targetId, { nl:message, parsed:parsed }); break;
+        case 'approve_partial': result = AE.hold(targetId, { nl:message, parsed:parsed, partial:true }); break;
+        default:                result = { ok:false, reason:'intent no manejado: '+parsed.intent };
+      }
+      return Object.assign(result, { parsed:parsed });
+    };
+
+    console.log('[AuraSupervisor] _evolveReview instalado en AuraEvolution');
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
+  // Supervisor gate hook — se inserta sobre Gate A ya instalado
+  // Intercepta mensajes del usuario cuando hay propuestas en revisión
+  // (confidence≥0.65 + intent!='unclear') → consume el mensaje como NL.
+  // ─────────────────────────────────────────────────────────────────
+  (function _supervisorGateHook(){
+    var _origGateA = window.__auraProcessAuraInput;
+    if(typeof _origGateA !== 'function') return;
+    if(_origGateA.__supervisorHooked) return;
+
+    window.__auraProcessAuraInput = function(text, meta){
+      try{
+        var AE = window.AuraEvolution;
+        var SV = window.AuraSupervisor;
+        if(AE && SV && typeof AE.getAwaitingReview === 'function'){
+          var pending = AE.getAwaitingReview();
+          if(pending.length > 0){
+            var parsed = SV.parse(text, { hasPending:true });
+            if(parsed.confidence >= 0.65 && parsed.intent !== 'unclear'){
+              var reviewResult = AE.reviewFromNL(text, pending[0].id);
+              if(reviewResult.ok){
+                var ICONS = { approve:'✓ aprobado', reject:'✗ rechazado', hold:'⏸ pausado', revise:'✎ revisión solicitada', approve_partial:'~ aprobado parcialmente' };
+                var reply = '[AuraSupervisor] Propuesta '+pending[0].id+' — '+(ICONS[parsed.intent]||parsed.intent)+'\n'+parsed.reason+(Object.keys(parsed.constraints||{}).length?'\nConstraints: '+Object.keys(parsed.constraints).join(', '):'');
+                if(typeof window.addMsg==='function') window.addMsg('aura', reply);
+                if(window.AuraMeta) window.AuraMeta.logDecision({ decision:'allow', reason:'supervisor:'+parsed.intent+':'+pending[0].id, source:'supervisorGate', ts:Date.now() });
+                return Promise.resolve(true); // mensaje consumido — no pasa al LLM
+              }
+            }
+          }
+        }
+      }catch(e){ /* gate nunca rompe el pipeline */ }
+      return _origGateA.apply(this, arguments);
+    };
+
+    window.__auraProcessAuraInput.__infinibitGated   = _origGateA.__infinibitGated || 'gateA-v5';
+    window.__auraProcessAuraInput.__supervisorHooked = 'supervisorGate-v1';
+    window.processAuraInput = window.__auraProcessAuraInput;
+    console.log('[AuraSupervisor] gate hook instalado sobre __auraProcessAuraInput');
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
   // Registro y diagnóstico inicial
   // ─────────────────────────────────────────────────────────────────
   window.AuraKernel = window.AuraKernel || {};
   window.AuraKernel.infinibit = {
-    version:  'v1.6',
+    version:  'v1.7',
     enabled:  true,
-    modules:  ['InfiniBit','InfiniState','CollapseEngine','AuraMeta','AuraEvolution'],
+    modules:  ['InfiniBit','InfiniState','CollapseEngine','AuraMeta','AuraEvolution','AuraAgenticity','AuraSupervisor'],
     gates:    {
       processInput: typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__infinibitGated,
+      supervisor:   typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__supervisorHooked,
       handleCmd:    typeof window.handleCmd === 'function' && !!window.handleCmd.__infinibitGated,
       voice:        typeof window.VoiceManager !== 'undefined' && !!window.VoiceManager.toggleConversation.__infinibitGated
     },
@@ -15901,11 +16192,15 @@ window.forceEnterAura = function(ev){
       var d = window.AuraMeta.diagnose();
       d.gates     = window.AuraKernel.infinibit.gates;
       d.decisions = window.AuraMeta.recentDecisions(5);
+      d.supervisor = window.AuraEvolution && window.AuraEvolution.getAwaitingReview
+        ? { pending: window.AuraEvolution.getAwaitingReview().length }
+        : null;
       return d;
     }
   };
 
-  console.log('[InfiniBit v1.6] gates — pipeline:', !!window.__auraProcessAuraInput.__infinibitGated,
+  console.log('[InfiniBit v1.7] gates — pipeline:', !!window.__auraProcessAuraInput.__infinibitGated,
+    '| supervisor:', !!window.__auraProcessAuraInput.__supervisorHooked,
     '| cmds:', !!window.handleCmd.__infinibitGated,
     '| voz:', !!(window.VoiceManager && window.VoiceManager.toggleConversation.__infinibitGated));
 })();
