@@ -1,3 +1,10 @@
+// ============================================================
+// ARCHIVO LEGACY — NO CONECTADO AL RUNTIME ACTUAL
+// Este archivo pertenece a un prototipo anterior de AURA.
+// index.html no lo carga. No modificar ni eliminar sin revisar
+// el historial git. Ver docs/architecture.md para contexto.
+// ============================================================
+
 const CORE_BUILD = "core ∞.7";
 
 const chat = document.getElementById("chat");
