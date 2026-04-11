@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r13-infinibit"/>
-<meta name="aura-build" content="IndexASv5.5.4-r13-infinibit"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r13-infinibit</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r14-integration"/>
+<meta name="aura-build" content="IndexASv5.5.4-r14-integration"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r14-integration</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r13-infinibit";var VERSION="vIndexASv5.5.4-r13-infinibit";</script>
+<script>var BUILD="IndexASv5.5.4-r14-integration";var VERSION="vIndexASv5.5.4-r14-integration";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -9932,6 +9932,49 @@ window._jarvisToggle = window.jarvisToggle;
   window._handleCmd=window.handleCmd;
 })();
 
+// /meta — diagnóstico AuraMeta + InfiniState desde el chat
+(function(){
+  var _orig=window.handleCmd;
+  if(typeof _orig!=='function') return;
+  window.handleCmd=function(cmd){
+    var base=cmd.slice(1).split(' ')[0].toLowerCase();
+    if(base==='meta'){
+      try{
+        if(typeof window.AuraMeta==='undefined'||typeof window.InfiniState==='undefined'){
+          if(typeof addMsg==='function') addMsg('aura','[AuraMeta] módulo no disponible aún.');
+          return Promise.resolve(true);
+        }
+        var diag=window.AuraMeta.diagnose();
+        var snap=window.InfiniState.snapshot();
+        var ce=window.CollapseEngine;
+        var lines=['[ AURA META · '+(window.BUILD||'?')+' ]',''];
+        lines.push('Estado: '+(diag.healthy?'✓ saludable':'⚠ '+diag.issues.length+' problema(s)'));
+        if(diag.issues.length){
+          diag.issues.forEach(function(i){
+            lines.push('  · ['+i.type+'] '+(i.info||JSON.stringify(i)));
+          });
+        }
+        lines.push('');
+        lines.push('InfiniState:');
+        Object.keys(snap).forEach(function(k){
+          var b=snap[k];
+          var score=ce?ce.collapse({amplitude:b.amplitude,uncertainty:b.uncertainty,coherence:b.coherence}):0;
+          var act=ce?ce.shouldAct({amplitude:b.amplitude,uncertainty:b.uncertainty,coherence:b.coherence}):false;
+          lines.push('  '+k+': amp='+b.amplitude.toFixed(2)+' coh='+b.coherence.toFixed(2)+' unc='+b.uncertainty.toFixed(2)+' score='+score.toFixed(2)+(act?' [activo]':''));
+        });
+        lines.push('');
+        lines.push('Obs: '+window.AuraMeta._log.length+' | Anomalías: '+window.AuraMeta.anomalies().length);
+        if(typeof addMsg==='function') addMsg('aura',lines.join('\n'));
+      }catch(e){
+        if(typeof addMsg==='function') addMsg('aura','[AuraMeta] error: '+e.message);
+      }
+      return Promise.resolve(true);
+    }
+    return _orig.apply(this,arguments);
+  };
+  window._handleCmd=window.handleCmd;
+})();
+
 // Init
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded',function(){VoiceManager.init();setTimeout(VoiceManager.renderUI,300);});
@@ -15210,17 +15253,63 @@ window.forceEnterAura = function(ev){
   };
 
   // ─────────────────────────────────────────────────────────────────
-  // Bridge pasivo — sincroniza InfiniState con eventos AURA existentes
-  // No modifica ningún módulo existente. Solo escucha.
+  // Bridge activo — conecta InfiniState al runtime real de AURA
   // ─────────────────────────────────────────────────────────────────
   (function _bridge(){
     var IS = window.InfiniState;
     var MA = window.AuraMeta;
+    var CE = window.CollapseEngine;
 
+    // 1. VoiceManager → speaking + listening reales
+    // VoiceManager.onStateChange está expuesto como API pública
+    // Se puede registrar antes de init() — solo empuja a _listeners[]
+    try{
+      window.VoiceManager.onStateChange(function(next, prev){
+        try{
+          var STATES = window.VoiceManager.STATES;
+          switch(next){
+            case STATES.LISTENING:
+              IS.update('listening', { amplitude:0.95, coherence:0.9,  uncertainty:0.1,  mode:'binary' });
+              IS.update('speaking',  { amplitude:0.05, coherence:1.0,  uncertainty:0.05 });
+              break;
+            case STATES.SPEAKING:
+            case STATES.PAUSED:
+              IS.update('speaking',  { amplitude:0.9,  coherence:0.85, uncertainty:0.1,  mode:'continuous' });
+              IS.update('listening', { amplitude:0.05, coherence:1.0,  uncertainty:0.05 });
+              break;
+            case STATES.PROCESSING:
+              IS.update('thinking',  { amplitude:0.75, coherence:0.8,  uncertainty:0.2,  mode:'continuous' });
+              IS.update('listening', { amplitude:0.1,  coherence:0.9,  uncertainty:0.1 });
+              break;
+            case STATES.IDLE:
+            case STATES.COOLDOWN:
+              IS.update('speaking',  { amplitude:0.0,  coherence:1.0,  uncertainty:0.05, mode:'contextual' });
+              IS.update('listening', { amplitude:0.0,  coherence:1.0,  uncertainty:0.05, mode:'contextual' });
+              break;
+            case STATES.ERROR:
+              IS.update('listening', { amplitude:0.2,  coherence:0.3,  uncertainty:0.8,  mode:'mixed' });
+              IS.update('speaking',  { amplitude:0.2,  coherence:0.3,  uncertainty:0.8,  mode:'mixed' });
+              MA.observe({ state:IS.snapshot(), errors:['VoiceManager:ERROR from '+prev] });
+              break;
+          }
+        }catch(e){}
+      });
+    }catch(e){ console.warn('[InfiniBit] VoiceManager.onStateChange no disponible:', e); }
+
+    // 2. aura:turn:* — CollapseEngine detecta colisiones de turn
     window.addEventListener('aura:turn:start', function(ev){
       try{
+        // CollapseEngine: si thinking ya estaba activo → posible colisión
+        var wasActive = CE.shouldAct(IS.thinking);
+        if(wasActive){
+          MA.observe({
+            state:       IS.snapshot(),
+            errors:      ['turn:start colisión — thinking ya activo'],
+            performance: { collision:true }
+          });
+          console.warn('[InfiniBit] CollapseEngine detectó turn:start con thinking activo (posible colisión)');
+        }
         IS.update('thinking', { amplitude:0.9, coherence:0.8, uncertainty:0.15, mode:'continuous' });
-        IS.update('speaking', { amplitude:0.1, coherence:0.9, uncertainty:0.1 });
         MA.observe({ state:IS.snapshot(), errors:[] });
       }catch(e){}
     });
