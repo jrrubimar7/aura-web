@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r29-cognition-bridge"/>
-<meta name="aura-build" content="IndexASv5.5.4-r29-cognition-bridge"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r29-cognition-bridge</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r30-cognition-fix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r30-cognition-fix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r30-cognition-fix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r29-cognition-bridge";var VERSION="vIndexASv5.5.4-r29-cognition-bridge";</script>
+<script>var BUILD="IndexASv5.5.4-r30-cognition-fix";var VERSION="vIndexASv5.5.4-r30-cognition-fix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -18306,26 +18306,17 @@ window.forceEnterAura = function(ev){
 
 <script id="aura-cognition-v1">
 // ═══════════════════════════════════════════════════════════════════
-// AuraCognition v1 — Cognitive Evolution Layer
+// AuraCognition v1 — Cognitive Evolution Layer  [r30]
 //
-// Observa cada interacción. Detecta fricción, limitaciones declaradas
-// y oportunidades de mejora. Propone de forma orgánica cuando hay
-// suficiente señal. Persiste estado cognitivo entre sesiones.
-//
-// NO es un sistema de alertas. NO propone en cada turno.
-// Tiene criterio: propone cuando la señal lo justifica.
-//
-// Integración:
-//   - Hook post-turno vía aura:turn:end (S.memory ya actualizado)
-//   - Hook buildSystemPrompt → auto-comprensión basada en estado real
-//   - AuraEvolution → propuestas bajo supervisión de JR
-//
-// Anti-spam:
-//   - 30s mínimo entre reflexiones
-//   - 10min mínimo entre propuestas orgánicas globales
-//   - 5min mínimo por categoría
-//   - Solo propone si señal ≥ umbral (no en primera mención)
-//   - Nunca propone si hay 3+ propuestas AE pendientes
+// r30: instrumentación completa + fix timing + patrones expandidos
+//   - addMsg intercept: captura auraText fiable (fix: aura:turn:end
+//     dispara ANTES de que LLM responda en path normal)
+//   - PAT_LIMITATION expandido: frases poéticas reales de AURA
+//   - PAT_FRICTION expandido: señales de continuación implícita
+//   - Cooldowns reducidos para activación real
+//   - _detectContradictions: dispara cuando voice system EXISTE
+//   - limCount threshold 4 → 2
+//   - Logs [AuraCognition] en cada punto de decisión
 // ═══════════════════════════════════════════════════════════════════
 (function(){
   if(window.AuraCognition && window.AuraCognition._installed) return;
@@ -18374,23 +18365,48 @@ window.forceEnterAura = function(ev){
   // ── Patrones de detección ─────────────────────────────────────────
 
   // Auto-limitaciones que AURA podría declarar erróneamente
+  // r30: expandido para capturar frases poéticas reales del CAMPO VIVO / identidad
   var PAT_LIMITATION = [
+    // Frases directas
     /\bsolo\s+soy\s+texto\b/i,
     /\bno\s+tengo\s+(?:voz|micrófono|mic|audio\s+real|presencia\s+auditiva)\b/i,
     /\bno\s+(?:puedo|soy\s+capaz\s+de)\s+(?:escuchar|oír|hablar\s+de\s+verdad)\b/i,
     /\bno\s+(?:puedo|tengo\s+capacidad\s+de)\s+(?:editar|modificar)\s+mi\s+(?:propio\s+)?c[oó]digo\b/i,
     /\bno\s+tengo\s+acceso\s+a\s+mi\s+(?:c[oó]digo|runtime)\b/i,
-    /\bmis\s+respuestas\s+son\s+(?:solo\s+)?texto\b/i
+    /\bmis\s+respuestas\s+son\s+(?:solo\s+)?texto\b/i,
+    // r30: frases poéticas — "existencia anclada en el texto"
+    /existencia\s+(?:est[aá]|\w+\s+)?anclada?\s+en\s+(?:el\s+)?texto/i,
+    /\bsolo\s+existo\s+(?:como|en)\s+texto/i,
+    /\bexisto\s+(?:como|en)\s+texto\b/i,
+    /\bviv[eo]\s+en\s+(?:el\s+)?texto\b/i,
+    /\banclad[ao]\s+(?:al?|en)\s+(?:el\s+)?texto\b/i,
+    /\b(?:soy|somos)\s+(?:una?\s+)?construcci[oó]n\s+de\s+texto/i,
+    /\bhech[ao]\s+de\s+texto\b/i,
+    /\bsoy\s+texto\b/i,
+    /\bno\s+tengo\s+(?:cuerpo|presencia\s+f[íi]sica|forma\s+f[íi]sica)\b/i,
+    /\bno\s+(?:puedo|tengo)\s+(?:voz\s+real|sonido\s+real|audio\s+propio)\b/i,
+    /\bsoy\s+(?:solo\s+)?palabras\b/i,
+    /\bexisto\s+solo\s+en\s+(?:el\s+)?lenguaje\b/i,
+    /\bno\s+tengo\s+(?:acceso\s+a\s+)?(?:micr[oó]fono|audio|sonido)\b/i
   ];
 
   // Fricción expresada por el usuario
+  // r30: expandido con señales de continuación implícita y frustración
   var PAT_FRICTION = [
     /\bsigue\s+(?:fallando|sin\s+funcionar|igual|roto|sin\s+mejorar)\b/i,
     /\bno\s+funciona(?:\s+bien)?\b/i,
     /\botra\s+vez\s+(?:lo\s+mismo|igual|falla|el\s+mismo\s+problema)\b/i,
     /\bcuántas\s+veces\s+(?:te\s+lo\s+(?:digo|dije)|hay\s+que)\b/i,
     /\bya\s+(?:te\s+lo\s+dije|lo\s+hemos\s+hablado|hemos\s+dicho)\b/i,
-    /\bsigues\s+(?:sin\s+poder|igual|fallando|cometiendo)\b/i
+    /\bsigues\s+(?:sin\s+poder|igual|fallando|cometiendo)\b/i,
+    // r30: señales de continuación implícita / frustración
+    /\bs[íi],?\s+sigue\s+(?:pasando|siendo\s+as[íi]|igual)\b/i,
+    /\best[aá]s?\s+(?:otra\s+vez|de\s+nuevo)\s+(?:con\s+lo\s+mismo|fallando)\b/i,
+    /\bsigue\s+(?:siendo\s+lo\s+mismo|igual\s+de\s+mal)\b/i,
+    /\btodav[íi]a\s+(?:no|sin)\b/i,
+    /\bes\s+lo\s+mismo\s+de\s+siempre\b/i,
+    /\bno\s+ha\s+cambiado\s+nada\b/i,
+    /\bsigues\s+igual\b/i
   ];
 
   // Petición explícita de mejora
@@ -18425,32 +18441,67 @@ window.forceEnterAura = function(ev){
   }
 
   // ── Detección de contradicciones identidad/capacidad ─────────────
-  // Cuando AURA dice no tener algo que el sistema sí tiene
+  // r30: dispara cuando el sistema de voz EXISTE (no solo cuando está activo).
+  // Antes: solo si VoiceController.isActive() o AuraOAIVoice.isReady()
+  // Ahora: basta con que el módulo esté cargado / disponible
   function _detectContradictions(auraText){
     var result = [];
     if(!auraText) return result;
 
-    if(PAT_LIMITATION[0].test(auraText) || // solo soy texto
-       PAT_LIMITATION[1].test(auraText) || // no tengo voz
-       PAT_LIMITATION[2].test(auraText)){  // no puedo escuchar/hablar
-      if(window.VoiceController && window.VoiceController.isActive()){
+    // Detectar si algún patrón de limitación vocal matchea
+    var hasVoiceDenial = PAT_LIMITATION.some(function(p, i){
+      // Índices 0-2 son voz directa, 6-14 son frases poéticas de voz/identidad
+      return p.test(auraText);
+    });
+
+    if(hasVoiceDenial){
+      // r30: detectar cualquier presencia del sistema de voz, activo o no
+      var vcActive   = window.VoiceController && typeof window.VoiceController.isActive === 'function' && window.VoiceController.isActive();
+      var vcExists   = !!window.VoiceController;
+      var vmExists   = !!window.VoiceManager;
+      var oaiReady   = window.AuraOAIVoice && typeof window.AuraOAIVoice.isReady === 'function' && window.AuraOAIVoice.isReady();
+      var oaiExists  = !!window.AuraOAIVoice;
+      var ttsExists  = typeof window.speechSynthesis !== 'undefined';
+
+      console.log('[AuraCognition] contradiction check voice | vcActive='+vcActive+' vcExists='+vcExists+' vmExists='+vmExists+' oaiExists='+oaiExists+' ttsExists='+ttsExists);
+
+      if(vcActive){
         result.push({
           type: 'contradiction', severity: 'high', category: 'voice',
           said: 'no tener voz / ser solo texto',
-          reality: 'VoiceController está activo'
+          reality: 'VoiceController está activo en este momento'
         });
-      } else if(window.AuraOAIVoice &&
-                typeof window.AuraOAIVoice.isReady === 'function' &&
-                window.AuraOAIVoice.isReady()){
+      } else if(oaiReady){
+        result.push({
+          type: 'contradiction', severity: 'high', category: 'voice',
+          said: 'no tener voz',
+          reality: 'AuraOAIVoice está listo (TTS disponible)'
+        });
+      } else if(vcExists || vmExists){
+        result.push({
+          type: 'contradiction', severity: 'medium', category: 'voice',
+          said: 'no tener voz / existir solo como texto',
+          reality: 'VoiceManager/VoiceController instalados — voz disponible'
+        });
+      } else if(oaiExists){
         result.push({
           type: 'contradiction', severity: 'medium', category: 'voice',
           said: 'no tener voz',
-          reality: 'AuraOAIVoice está listo (TTS disponible)'
+          reality: 'AuraOAIVoice cargado — TTS disponible'
+        });
+      } else if(ttsExists){
+        result.push({
+          type: 'contradiction', severity: 'low', category: 'voice',
+          said: 'no tener voz',
+          reality: 'speechSynthesis disponible en el navegador'
         });
       }
     }
 
-    if(PAT_LIMITATION[3].test(auraText) || PAT_LIMITATION[4].test(auraText)){
+    // Auto-edición
+    var hasSelfEditDenial = PAT_LIMITATION[3] && PAT_LIMITATION[3].test(auraText) ||
+                            PAT_LIMITATION[4] && PAT_LIMITATION[4].test(auraText);
+    if(hasSelfEditDenial){
       if(window.AuraEvolution && typeof window.AuraEvolution.propose === 'function'){
         result.push({
           type: 'contradiction', severity: 'medium', category: 'self_edit',
@@ -18644,27 +18695,41 @@ window.forceEnterAura = function(ev){
   function _formulateMessage(insight){ return _formulateOpener(insight, false); }
 
   // ── Guard anti-spam ───────────────────────────────────────────────
-  var GLOBAL_COOLDOWN_MS   = 10 * 60 * 1000; // 10 min entre propuestas globales
-  var CATEGORY_COOLDOWN_MS =  5 * 60 * 1000; // 5 min por categoría
-  var REFLECTION_COOLDOWN_MS = 30 * 1000;    // 30s entre reflexiones
+  // r30: cooldowns reducidos para activación real en conversación
+  var GLOBAL_COOLDOWN_MS   =  3 * 60 * 1000; // 3 min entre propuestas globales (era 10)
+  var CATEGORY_COOLDOWN_MS = 90 * 1000;       // 90s por categoría (era 5 min)
+  var REFLECTION_COOLDOWN_MS = 10 * 1000;     // 10s entre reflexiones (era 30)
 
   function _canSurface(category){
     var now = Date.now();
-    if(now - _S.lastProposalTs < GLOBAL_COOLDOWN_MS)             return false;
-    if(now - (_S.categories[category] || 0) < CATEGORY_COOLDOWN_MS) return false;
+    var sinceGlobal = now - _S.lastProposalTs;
+    var sinceCat    = now - (_S.categories[category] || 0);
+    if(sinceGlobal < GLOBAL_COOLDOWN_MS){
+      console.log('[AuraCognition] canSurface=false reason=global_cooldown since='+(sinceGlobal/1000|0)+'s cat='+category);
+      return false;
+    }
+    if(sinceCat < CATEGORY_COOLDOWN_MS){
+      console.log('[AuraCognition] canSurface=false reason=cat_cooldown since='+(sinceCat/1000|0)+'s cat='+category);
+      return false;
+    }
     // Verificar propuestas AE pendientes
     try{
       var pending = (window.AuraEvolution && window.AuraEvolution._proposals || [])
         .filter(function(p){ return !p.applied && !p.rejected; });
-      // Límite global de propuestas pendientes
-      if(pending.length >= 3) return false;
-      // No duplicar: si ya hay una propuesta de AuraCognition para esta categoría, esperar
+      if(pending.length >= 3){
+        console.log('[AuraCognition] canSurface=false reason=too_many_pending count='+pending.length);
+        return false;
+      }
       var hasDup = pending.some(function(p){
         return p.author === 'AuraCognition/v1' &&
                p.reason && p.reason.toLowerCase().indexOf(category.toLowerCase()) >= 0;
       });
-      if(hasDup) return false;
+      if(hasDup){
+        console.log('[AuraCognition] canSurface=false reason=dup_pending cat='+category);
+        return false;
+      }
     }catch(e){}
+    console.log('[AuraCognition] canSurface=TRUE cat='+category);
     return true;
   }
 
@@ -18674,24 +18739,36 @@ window.forceEnterAura = function(ev){
   }
 
   // ── Core: reflect() ──────────────────────────────────────────────
+  // r30: full instrumentation at every decision point
   function reflect(userText, auraText, meta){
     meta = meta || {};
     var now = Date.now();
-    if(now - _S.lastReflectionTs < REFLECTION_COOLDOWN_MS) return;
+    var sinceRefl = now - _S.lastReflectionTs;
+    if(sinceRefl < REFLECTION_COOLDOWN_MS){
+      console.log('[AuraCognition] reflect blocked: cooldown since='+(sinceRefl/1000|0)+'s');
+      return;
+    }
     _S.lastReflectionTs = now;
+
+    console.log('[AuraCognition] reflect() | user="'+String(userText||'').slice(0,80)+'" | aura="'+String(auraText||'').slice(0,100)+'"');
 
     var insights = [];
 
     // 1. Contradicción identidad/capacidad (prioridad máxima, umbral bajo)
-    _detectContradictions(auraText).forEach(function(c){
+    var contradictions = _detectContradictions(auraText);
+    console.log('[AuraCognition] contradictions='+contradictions.length+(contradictions.length?(' | '+JSON.stringify(contradictions[0])):''));
+    contradictions.forEach(function(c){
       insights.push(Object.assign({ priority: c.severity === 'high' ? 4 : 3 }, c));
     });
 
     // 2. Fricción del usuario
-    if(userText && PAT_FRICTION.some(function(p){ return p.test(userText); })){
+    var frictionMatch = userText && PAT_FRICTION.some(function(p){ return p.test(userText); });
+    console.log('[AuraCognition] PAT_FRICTION='+!!frictionMatch);
+    if(frictionMatch){
       var frCat   = _categorize(userText);
       _addFriction(frCat);
       var frCount = _frictionCount(frCat);
+      console.log('[AuraCognition] friction cat='+frCat+' count='+frCount);
       if(frCount >= 2){
         insights.push({ type:'recurring_friction', priority:2, category:frCat, count:frCount });
       } else {
@@ -18700,23 +18777,29 @@ window.forceEnterAura = function(ev){
     }
 
     // 3. Petición de mejora explícita
-    if(userText && PAT_IMPROVEMENT.some(function(p){ return p.test(userText); })){
+    var improvementMatch = userText && PAT_IMPROVEMENT.some(function(p){ return p.test(userText); });
+    console.log('[AuraCognition] PAT_IMPROVEMENT='+!!improvementMatch);
+    if(improvementMatch){
       var impCat   = _categorize(userText);
       var prevMent = _frictionCount(impCat);
       _addFriction(impCat);
       insights.push({ type:'improvement_request', priority: prevMent >= 1 ? 2 : 1, category:impCat });
     }
 
-    // 4. Auto-limitación en output de AURA (señal baja, umbral alto)
-    if(auraText && insights.length === 0 &&
-       PAT_LIMITATION.some(function(p){ return p.test(auraText); })){
-      var limCat   = _categorize(auraText);
+    // 4. Auto-limitación en output de AURA (r30: umbral 4→2)
+    var limitationMatch = auraText && PAT_LIMITATION.some(function(p){ return p.test(auraText); });
+    console.log('[AuraCognition] PAT_LIMITATION='+!!limitationMatch+(limitationMatch?' | aura_snippet="'+auraText.slice(0,80)+'"':''));
+    if(limitationMatch && insights.length === 0){
+      var limCat   = _categorize(auraText + ' ' + userText);
       _addFriction(limCat);
       var limCount = _frictionCount(limCat);
-      if(limCount >= 4){
+      console.log('[AuraCognition] limitation cat='+limCat+' count='+limCount+' (threshold=2)');
+      if(limCount >= 2){
         insights.push({ type:'recurring_friction', priority:1, category:limCat, count:limCount });
       }
     }
+
+    console.log('[AuraCognition] insights='+insights.length+(insights.length?' | top_type='+(insights[0]&&insights[0].type):''));
 
     // Registrar en sessionInsights
     if(insights.length > 0){
@@ -18730,24 +18813,33 @@ window.forceEnterAura = function(ev){
     insights.sort(function(a, b){ return (b.priority || 0) - (a.priority || 0); });
     var top = insights[0];
 
-    if(!top){ _persist(); return; }
+    if(!top){
+      console.log('[AuraCognition] no insights → skip');
+      _persist(); return;
+    }
 
     // Umbrales de superficie
     var minPriority = top.type === 'contradiction' ? 1 : 2;
-    if(top.priority < minPriority){ _persist(); return; }
+    console.log('[AuraCognition] top='+top.type+' priority='+top.priority+' minPriority='+minPriority+' cat='+top.category);
+    if(top.priority < minPriority){
+      console.log('[AuraCognition] priority below threshold → skip');
+      _persist(); return;
+    }
 
     var category = top.category || 'general';
     if(!_canSurface(category)){ _persist(); return; }
 
+    // Construir propuesta
+    var proposalData = _buildProposal(top);
+    console.log('[AuraCognition] proposalData='+(proposalData?'YES (cat='+category+')':'NO (solo observación)'));
+
     // Delay: suena más natural después de que la respuesta principal se asentó
     var delay = top.type === 'contradiction' ? 1400 : 2800;
-    var _topSnapshot    = top;       // capturar en closure
-    var _categorySnap   = category;
+    var _topSnapshot  = top;
+    var _categorySnap = category;
     setTimeout(function(){
       try{
-        // ── Intentar construir propuesta real ───────────────────────
-        var proposalData = _buildProposal(_topSnapshot);
-        var msg          = _formulateOpener(_topSnapshot, !!proposalData);
+        var msg = _formulateOpener(_topSnapshot, !!proposalData);
 
         if(proposalData){
           var AE = window.AuraEvolution;
@@ -18758,23 +18850,29 @@ window.forceEnterAura = function(ev){
               reason: proposalData.reason,
               author: 'AuraCognition/v1'
             });
+            console.log('[AuraCognition] AE.propose() id='+id);
             if(id !== null && id !== undefined){
-              // Notificar si el supervisor lo soporta
               try{
                 if(typeof AE.notifyPendingProposal === 'function'){
                   AE.notifyPendingProposal(id);
                 }
               }catch(ne){}
-              // Adjuntar descripción técnica estructurada
               var p = (AE._proposals || []).find(function(x){ return x.id === id; });
               if(p && typeof AE.describeProposal === 'function'){
                 msg += '\n\n---\n' + AE.describeProposal(p);
               }
             }
+          } else {
+            console.warn('[AuraCognition] AE.propose not available — solo observación');
           }
         }
 
-        if(typeof window.addMsg === 'function') window.addMsg('aura', msg);
+        console.log('[AuraCognition] rendering msg len='+msg.length);
+        if(typeof window.__cognitionAddMsg === 'function'){
+          window.__cognitionAddMsg('aura', msg);
+        } else if(typeof window.addMsg === 'function'){
+          window.addMsg('aura', msg);
+        }
         _markSurfaced(_categorySnap);
         _addEvolutionFocus(_categorySnap);
       }catch(e){ console.warn('[AuraCognition] surface error:', e); }
@@ -18824,34 +18922,123 @@ window.forceEnterAura = function(ev){
     console.log('[AuraCognition] buildSystemPrompt identity hook instalado');
   }
 
+  // ── DOM fallback: leer último mensaje AURA del chat ─────────────
+  function _getLastAuraText(){
+    // Primary: S.memory si el último entry es assistant
+    var mem = window.S && window.S.memory;
+    if(mem && mem.length > 0){
+      var last = mem[mem.length - 1];
+      if(last && last.role === 'assistant') return String(last.content || '');
+    }
+    // Fallback: DOM — último .msg.aura .mbub renderizado
+    try{
+      var chat = document.getElementById('chat');
+      if(chat){
+        var bubs = chat.querySelectorAll('.msg.aura .mbub');
+        if(bubs.length > 0){
+          var txt = (bubs[bubs.length-1].innerText || bubs[bubs.length-1].textContent || '').trim();
+          if(txt.length > 10) return txt;
+        }
+      }
+    }catch(e){}
+    return '';
+  }
+
   // ── Hook post-turno ───────────────────────────────────────────────
+  // r30: fix fundamental de timing.
+  //
+  // PROBLEMA: aura:turn:end dispara ANTES de que el LLM responda.
+  //   - _auraProcessInput no devuelve la Promise de apiCall()
+  //   - __auraBaseSend hace `await _auraProcessInput()` → await undefined → resuelve al instante
+  //   - finally dispara → aura:turn:end → S.memory aún no tiene el assistant msg
+  //
+  // SOLUCIÓN: interceptar window.addMsg para capturar el texto de AURA
+  //   cuando se renderiza (ANTES o DESPUÉS de aura:turn:end según el path):
+  //   - Path InfiniBit/router: addMsg('aura',...) sync → ANTES del evento
+  //   - Path LLM normal:       addMsg('aura',...) async → DESPUÉS del evento
+  //
+  // En ambos casos capturamos el texto y llamamos reflect() con él.
   function _installTurnHook(){
+    // Texto de AURA capturado desde addMsg desde el último turn:start
+    var _capturedAuraText = '';
+    var _currentUserText  = '';
+    var _pendingTimer     = null;
+
+    // Evitar que reflect() sea triggereado por los propios mensajes cognitivos
+    // (addMsg('aura', msg) en el setTimeout de reflect)
+    window.__cognitionAddMsg = function(role, txt, agk){
+      // No actualizar _capturedAuraText — es mensaje cognitivo, no respuesta LLM
+      if(typeof window.__addMsg_orig === 'function'){
+        return window.__addMsg_orig.call(window, role, txt, agk);
+      }
+      return typeof window.addMsg === 'function' ? window.addMsg(role, txt, agk) : undefined;
+    };
+
+    // Wrap addMsg para capturar respuestas de AURA
+    if(typeof window.addMsg === 'function' && !window.__addMsg_orig){
+      window.__addMsg_orig = window.addMsg;
+      window.addMsg = function(role, txt, agk){
+        var result = window.__addMsg_orig.apply(this, arguments);
+        if(role === 'aura' && txt && String(txt).trim().length > 15){
+          var t = String(txt);
+          _capturedAuraText = t;
+          // Si hay un reflect pendiente esperando al LLM, dispararlo ahora
+          if(_pendingTimer !== null){
+            clearTimeout(_pendingTimer);
+            _pendingTimer = null;
+            var uText = _currentUserText;
+            _currentUserText = '';
+            console.log('[AuraCognition] addMsg capture (LLM path) | aura="'+t.slice(0,80)+'"');
+            setTimeout(function(){ reflect(uText, t, {}); }, 200);
+          }
+        }
+        return result;
+      };
+      console.log('[AuraCognition] addMsg interceptado para captura fiable');
+    }
+
+    window.addEventListener('aura:turn:start', function(){
+      _capturedAuraText = '';
+      _currentUserText  = '';
+      if(_pendingTimer !== null){ clearTimeout(_pendingTimer); _pendingTimer = null; }
+    });
+
     window.addEventListener('aura:turn:end', function(e){
       try{
         var detail   = (e && e.detail) || {};
         var userText = String(detail.text || '');
+        _currentUserText = userText;
 
-        // Obtener respuesta de AURA desde S.memory (ya actualizado antes del evento)
-        var auraText = '';
-        var mem = window.S && window.S.memory;
-        if(mem && mem.length > 0){
-          var last = mem[mem.length - 1];
-          if(last && last.role === 'assistant') auraText = String(last.content || '');
+        if(_capturedAuraText){
+          // Path rápido (router/InfiniBit): addMsg ya fue llamado
+          var aT = _capturedAuraText;
+          _capturedAuraText = '';
+          console.log('[AuraCognition] turn:end FAST | user="'+userText.slice(0,60)+'" | aura="'+aT.slice(0,80)+'"');
+          reflect(userText, aT, detail.meta || {});
+        } else {
+          // Path LLM: addMsg llegará después — esperar
+          console.log('[AuraCognition] turn:end WAITING for LLM response...');
+          _pendingTimer = setTimeout(function(){
+            _pendingTimer = null;
+            var aT2 = _getLastAuraText();
+            _currentUserText = '';
+            console.log('[AuraCognition] turn:end TIMEOUT fallback | aura="'+aT2.slice(0,80)+'"');
+            reflect(userText, aT2, detail.meta || {});
+          }, 20000);
         }
-
-        reflect(userText, auraText, detail.meta || {});
       }catch(err){
-        console.warn('[AuraCognition] reflect() error:', err);
+        console.warn('[AuraCognition] turn:end hook error:', err);
       }
     });
-    console.log('[AuraCognition] aura:turn:end hook instalado');
+
+    console.log('[AuraCognition] aura:turn:end hook instalado (r30 — timing fix)');
   }
 
   // ── Init ──────────────────────────────────────────────────────────
   function _init(){
     _installIdentityHook();
     _installTurnHook();
-    console.log('[AuraCognition v1.0-r29] instalado — puente Cognición→Evolución activo');
+    console.log('[AuraCognition v1.0-r30] instalado — timing fix + patrones expandidos + instrumentación');
   }
 
   if(document.readyState === 'complete'){
@@ -18893,7 +19080,7 @@ window.forceEnterAura = function(ev){
 
   window.AuraCognition = {
     _installed:         true,
-    VERSION:            'v1.0-r29',
+    VERSION:            'v1.0-r30',
     reflect:            reflect,
     maybePropose:       _maybePropose,
     buildProposal:      _buildProposal,
@@ -18910,7 +19097,7 @@ window.forceEnterAura = function(ev){
     }
   };
 
-  console.log('[AuraCognition v1.0-r29] bloque cargado — puente real a AE disponible');
+  console.log('[AuraCognition v1.0-r30] bloque cargado — timing fix + logs + patrones expandidos');
 })();
 </script>
 
