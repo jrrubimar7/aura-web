@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r16-phase5"/>
-<meta name="aura-build" content="IndexASv5.5.4-r16-phase5"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r16-phase5</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r17-voice-gate"/>
+<meta name="aura-build" content="IndexASv5.5.4-r17-voice-gate"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r17-voice-gate</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r16-phase5";var VERSION="vIndexASv5.5.4-r16-phase5";</script>
+<script>var BUILD="IndexASv5.5.4-r17-voice-gate";var VERSION="vIndexASv5.5.4-r17-voice-gate";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -9932,7 +9932,7 @@ window._jarvisToggle = window.jarvisToggle;
   window._handleCmd=window.handleCmd;
 })();
 
-// /meta — diagnóstico AuraMeta + InfiniState desde el chat
+// /meta — panel de supervisión AuraMeta (4 secciones)
 (function(){
   var _orig=window.handleCmd;
   if(typeof _orig!=='function') return;
@@ -9944,37 +9944,85 @@ window._jarvisToggle = window.jarvisToggle;
           if(typeof addMsg==='function') addMsg('aura','[AuraMeta] módulo no disponible aún.');
           return Promise.resolve(true);
         }
-        var diag=window.AuraMeta.diagnose();
-        var snap=window.InfiniState.snapshot();
-        var ce=window.CollapseEngine;
-        var lines=['[ AURA META · '+(window.BUILD||'?')+' ]',''];
-        lines.push('Estado: '+(diag.healthy?'✓ saludable':'⚠ '+diag.issues.length+' problema(s)'));
-        if(diag.issues.length){
-          diag.issues.forEach(function(i){
+
+        var diag      = window.AuraMeta.diagnose();
+        var snap      = window.InfiniState.snapshot();
+        var ce        = window.CollapseEngine;
+        var decisions = window.AuraMeta.recentDecisions ? window.AuraMeta.recentDecisions(6) : [];
+        var issues    = diag.issues || [];
+
+        // ── Helpers ──────────────────────────────────────────────
+        function score(b){ return ce?ce.collapse(b):0; }
+        function bar(s){
+          var f=Math.round(s*5); var e=5-f;
+          return '▓'.repeat(f)+'░'.repeat(e)+' '+s.toFixed(2);
+        }
+        function label(b){
+          var s=score(b);
+          if(b.amplitude<0.1) return 'inactivo';
+          if(s>0.6) return 'activo';
+          if(b.uncertainty>0.7) return 'incierto';
+          return 'activo~';
+        }
+
+        // ── A. ESTADO GENERAL ────────────────────────────────────
+        var recentBlocks   = decisions.filter(function(d){ return d.decision==='block'   && (Date.now()-d.ts)<60000; });
+        var recentDegrades = decisions.filter(function(d){ return d.decision==='degrade' && (Date.now()-d.ts)<30000; });
+        var gState = (!diag.healthy || recentBlocks.length) ? '⚠ bloqueado/recuperado'
+                   : recentDegrades.length ? '~ degradado'
+                   : '✓ saludable';
+
+        var ki = window.AuraKernel && window.AuraKernel.infinibit;
+        var gates = ki && ki.gates ? ki.gates : {};
+        var gateStr = [gates.processInput?'pipeline':'',gates.handleCmd?'cmds':'',gates.voice?'voz':'']
+                      .filter(Boolean).join(' · ') || 'ninguno';
+
+        var lines = ['═══ /meta · '+(window.BUILD||'?')+' ═══',''];
+        lines.push('A. ESTADO GENERAL');
+        lines.push('  '+gState+(issues.length?' — '+issues.length+' issue(s)':''));
+        lines.push('  Gates activos: '+gateStr);
+        if(issues.length){
+          issues.forEach(function(i){
             lines.push('  · ['+i.type+'] '+(i.info||JSON.stringify(i)));
           });
         }
         lines.push('');
-        lines.push('InfiniState:');
-        Object.keys(snap).forEach(function(k){
+
+        // ── B. ESTADO VIVO ───────────────────────────────────────
+        lines.push('B. ESTADO VIVO');
+        ['thinking','speaking','listening','evolving'].forEach(function(k){
           var b=snap[k];
-          var score=ce?ce.collapse({amplitude:b.amplitude,uncertainty:b.uncertainty,coherence:b.coherence}):0;
-          var act=ce?ce.shouldAct({amplitude:b.amplitude,uncertainty:b.uncertainty,coherence:b.coherence}):false;
-          lines.push('  '+k+': amp='+b.amplitude.toFixed(2)+' coh='+b.coherence.toFixed(2)+' unc='+b.uncertainty.toFixed(2)+' score='+score.toFixed(2)+(act?' [activo]':''));
+          lines.push('  '+k.padEnd(9)+' '+bar(score(b))+'  ['+label(b)+']');
         });
+        lines.push('  obs: '+window.AuraMeta._log.length+' | anomalías: '+window.AuraMeta.anomalies().length);
         lines.push('');
-        lines.push('Obs: '+window.AuraMeta._log.length+' | Anomalías: '+window.AuraMeta.anomalies().length);
-        var decisions=window.AuraMeta.recentDecisions?window.AuraMeta.recentDecisions(5):[];
+
+        // ── C. GATE — decisiones recientes ───────────────────────
+        lines.push('C. GATE');
         if(decisions.length){
-          lines.push('');
-          lines.push('Decisiones gate (últimas '+decisions.length+'):');
           decisions.forEach(function(d){
             var age=Math.round((Date.now()-d.ts)/1000);
-            lines.push('  ['+d.decision.toUpperCase()+'] '+d.source+' — '+d.reason+' ('+age+'s)');
+            var icon = d.decision==='allow'?'✓' : d.decision==='degrade'?'~' : '✗';
+            lines.push('  '+icon+' ['+d.decision.toUpperCase()+'] '+d.source+' — '+d.reason+' ('+age+'s)');
           });
         } else {
-          lines.push('Gate: sin decisiones registradas');
+          lines.push('  sin decisiones registradas');
         }
+        lines.push('');
+
+        // ── D. LECTURA HUMANA ────────────────────────────────────
+        var summary=[];
+        if(recentBlocks.length)  summary.push('se detectaron '+recentBlocks.length+' bloqueo(s), recuperados automáticamente');
+        if(snap.listening.amplitude>0.5) summary.push('voz activa — escuchando');
+        if(snap.speaking.amplitude>0.5)  summary.push('AURA hablando');
+        if(snap.thinking.amplitude>0.5)  summary.push('procesando input');
+        if(snap.listening.uncertainty>0.6) summary.push('voz con incertidumbre ('+snap.listening.uncertainty.toFixed(2)+')');
+        if(snap.thinking.uncertainty>0.7)  summary.push('thinking degradado');
+        if(issues.find(function(i){return i.type==='busy_stuck';})) summary.push('pipeline atascado — revisar');
+        if(!summary.length) summary.push('sistema coherente, sin anomalías recientes');
+        lines.push('D. RESUMEN');
+        lines.push('  '+summary.join('\n  '));
+
         if(typeof addMsg==='function') addMsg('aura',lines.join('\n'));
       }catch(e){
         if(typeof addMsg==='function') addMsg('aura','[AuraMeta] error: '+e.message);
@@ -15520,16 +15568,133 @@ window.forceEnterAura = function(ev){
   })();
 
   // ─────────────────────────────────────────────────────────────────
+  // Gate C — autoridad real sobre voz / conversación
+  // Fase 5: CollapseEngine gobierna toggleConversation y startVoice.
+  // VoiceManager.onTranscript está congelado pero toggleConversation NO.
+  // stopConversation NUNCA se bloquea — solo las rutas de inicio.
+  // ─────────────────────────────────────────────────────────────────
+  (function _gateVoice(){
+    var VM = window.VoiceManager;
+    if(!VM || typeof VM.toggleConversation !== 'function'){
+      console.warn('[InfiniBit gateC] VoiceManager no disponible — gate de voz no instalado');
+      return;
+    }
+
+    var _origToggle = VM.toggleConversation;
+    var _lastBlock  = 0; // timestamp del último bloqueo de voz (anti-loop)
+
+    // Evaluación específica para voz — usa listening como dimensión principal
+    function _evalVoice(source){
+      if(!window.CollapseEngine || !window.AuraMeta || !window.InfiniState){
+        return { decision:'allow', reason:'infinibit-not-ready', score:1 };
+      }
+      var snap   = window.InfiniState.snapshot();
+      var issues = window.AuraMeta.diagnose().issues || [];
+      var CE     = window.CollapseEngine;
+      var listenScore = CE.collapse(snap.listening);
+
+      // BLOCK
+      // 1. Post-recovery cooldown — evita loop de block→recover→block
+      if(_lastBlock > 0 && (Date.now()-_lastBlock) < 5000){
+        return { decision:'block', reason:'post-recovery-cooldown:'+(Math.round((Date.now()-_lastBlock)/1000))+'s', score:listenScore };
+      }
+      // 2. error_spike + listening score muy bajo → posible loop de reconocimiento
+      if(issues.find(function(i){ return i.type==='error_spike'; }) && listenScore < 0.25){
+        return { decision:'block', reason:'error_spike+listen_score='+listenScore.toFixed(2), score:listenScore };
+      }
+      // 3. listening marcado incoherente Y con amplitude (ya intentó arrancar)
+      if(snap.listening.uncertainty > 0.85 && snap.listening.amplitude > 0.2){
+        return { decision:'block', reason:'listening_incoherente:unc='+snap.listening.uncertainty.toFixed(2), score:listenScore };
+      }
+
+      // DEGRADE
+      // 1. Incertidumbre moderada en listening o thinking
+      if(snap.listening.uncertainty > 0.6 || snap.thinking.uncertainty > 0.7){
+        return { decision:'degrade', reason:'uncertainty:lis='+snap.listening.uncertainty.toFixed(2)+' thi='+snap.thinking.uncertainty.toFixed(2), score:listenScore };
+      }
+      // 2. Lock activo — pipeline podría estar ocupado
+      if(issues.find(function(i){ return i.type==='lock_held'; })){
+        return { decision:'degrade', reason:'lock_held', score:listenScore };
+      }
+
+      return { decision:'allow', reason:'coherente', score:listenScore };
+    }
+
+    // ── wrapper toggleConversation ──────────────────────────────
+    // stop siempre pasa — solo se evalúa el inicio
+    VM.toggleConversation = function(){
+      // Si ya está en convMode → es un stop → siempre permitir
+      if(typeof VM.isConvMode === 'function' && VM.isConvMode()){
+        return _origToggle.apply(this, arguments);
+      }
+
+      var ev = _evalVoice('toggleConversation');
+      window.AuraMeta.logDecision({ decision:ev.decision, reason:ev.reason, score:ev.score, source:'voiceGate:conv' });
+
+      if(ev.decision === 'block'){
+        _lastBlock = Date.now();
+        console.warn('[InfiniBit gateC] BLOCK conv →', ev.reason);
+        try{ if(typeof window.toast === 'function') window.toast('Voz pausada: '+ev.reason); }catch(e){}
+        try{ if(typeof window.sig  === 'function') window.sig('[◈] Gate: conv bloqueado — '+ev.reason,'rgba(239,68,68,.45)'); }catch(e){}
+        return;
+      }
+      if(ev.decision === 'degrade'){
+        console.warn('[InfiniBit gateC] DEGRADE conv →', ev.reason);
+        // Reduce uncertainty levemente antes de abrir (evita ciclos de degradación)
+        try{
+          var cur = window.InfiniState.listening.uncertainty;
+          window.InfiniState.update('listening', { uncertainty: Math.max(0, cur - 0.15) });
+        }catch(e){}
+      }
+
+      return _origToggle.apply(this, arguments);
+    };
+    VM.toggleConversation.__infinibitGated = 'gateC-v5';
+
+    // ── wrapper startVoice (mic puntual) ──────────────────────────
+    // Stop (cuando mic ya está activo) siempre pasa
+    var _origStartVoice = window.startVoice;
+    window.startVoice = function(){
+      // Si el mic ya está grabando → es un stop → siempre permitir
+      var vmState = typeof VM.getState === 'function' ? VM.getState() : null;
+      var isRecording = vmState && (vmState === 'listening' || vmState === 'processing');
+      if(isRecording) return _origStartVoice ? _origStartVoice.apply(this, arguments) : VM.toggleDirectMic();
+
+      var ev = _evalVoice('startVoice');
+      if(ev.decision !== 'allow'){
+        window.AuraMeta.logDecision({ decision:ev.decision, reason:ev.reason, score:ev.score, source:'voiceGate:direct' });
+      }
+      if(ev.decision === 'block'){
+        _lastBlock = Date.now();
+        console.warn('[InfiniBit gateC] BLOCK direct-mic →', ev.reason);
+        try{ if(typeof window.toast === 'function') window.toast('Mic pausado: '+ev.reason); }catch(e){}
+        return;
+      }
+
+      return _origStartVoice ? _origStartVoice.apply(this, arguments) : VM.toggleDirectMic();
+    };
+    window.startVoice.__infinibitGated = 'gateC-v5';
+
+    // Sincronizar aliases que apuntan al original
+    window.jarvisToggle  = VM.toggleConversation;
+    window._jarvisToggle = VM.toggleConversation;
+    window.toggleMic     = function(){ return VM.toggleDirectMic(); };
+
+    console.log('[InfiniBit gateC] activo — toggleConversation + startVoice');
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
   // Registro y diagnóstico inicial
   // ─────────────────────────────────────────────────────────────────
   window.AuraKernel = window.AuraKernel || {};
   window.AuraKernel.infinibit = {
-    version:  'v1.5',
+    version:  'v1.6',
     enabled:  true,
     modules:  ['InfiniBit','InfiniState','CollapseEngine','AuraMeta','AuraEvolution'],
     gates:    {
       processInput: typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__infinibitGated,
-      handleCmd:    typeof window.handleCmd === 'function' && !!window.handleCmd.__infinibitGated
+      handleCmd:    typeof window.handleCmd === 'function' && !!window.handleCmd.__infinibitGated,
+      voice:        typeof window.VoiceManager !== 'undefined' && !!window.VoiceManager.toggleConversation.__infinibitGated
     },
     status:   function(){
       var d = window.AuraMeta.diagnose();
@@ -15539,7 +15704,9 @@ window.forceEnterAura = function(ev){
     }
   };
 
-  console.log('[InfiniBit v1.5] gates activos — processInput:', !!window.__auraProcessAuraInput.__infinibitGated, '| handleCmd:', !!window.handleCmd.__infinibitGated);
+  console.log('[InfiniBit v1.6] gates — pipeline:', !!window.__auraProcessAuraInput.__infinibitGated,
+    '| cmds:', !!window.handleCmd.__infinibitGated,
+    '| voz:', !!(window.VoiceManager && window.VoiceManager.toggleConversation.__infinibitGated));
 })();
 </script>
 
