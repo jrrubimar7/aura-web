@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r6-hotfix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r6-hotfix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r6-hotfix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r7-hotfix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r7-hotfix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r7-hotfix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r6-hotfix";var VERSION="vIndexASv5.5.4-r6-hotfix";</script>
+<script>var BUILD="IndexASv5.5.4-r7-hotfix";var VERSION="vIndexASv5.5.4-r7-hotfix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -7449,8 +7449,8 @@ function wireUI(){
   document.addEventListener('touchstart', unlockAudio, {once:true, passive:true});
   document.addEventListener('click', unlockAudio, {once:true, passive:true});
 
-  var btn = el('b-send');
-  if(btn) btn.addEventListener('click', send);
+  // b-send usa onclick="sendOrStop()" en el HTML — no añadir listener aquí
+  // (añadir un listener adicional causaría doble envío con [object PointerEvent])
 
   // -- STT WIRING (build 2.9 fix) -----------------------------------------
   // b-imic → VoiceManager.toggleDirectMic (única autoridad)
