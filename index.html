@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r12-hotfix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r12-hotfix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r12-hotfix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r13-infinibit"/>
+<meta name="aura-build" content="IndexASv5.5.4-r13-infinibit"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r13-infinibit</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r12-hotfix";var VERSION="vIndexASv5.5.4-r12-hotfix";</script>
+<script>var BUILD="IndexASv5.5.4-r13-infinibit";var VERSION="vIndexASv5.5.4-r13-infinibit";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -14936,6 +14936,324 @@ window.forceEnterAura = function(ev){
     return true;
   };
   } // end drawerYoutube guard
+})();
+</script>
+
+
+<script id="aura-infinibit-v1">
+/* ═══════════════════════════════════════════════════════════════════
+   AURA ∞.Ω · INFiniBIT ENGINE v1
+   Estado no-binario expandido: InfiniBit, InfiniState, CollapseEngine
+   Meta-cognición: AuraMeta
+   Auto-edición supervisada: AuraEvolution
+
+   REGLAS:
+   - NO auto-aplica cambios sin confirmación explícita de JR
+   - NO modifica S, AuraState, VoiceManager ni ningún módulo existente
+   - Coexiste con sistema actual — integración progresiva
+   - Feature flag: localStorage.setItem('aura_infinibit','0') para deshabilitar
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+  if(window.__AURA_INFINIBIT_V1__) return;
+  window.__AURA_INFINIBIT_V1__ = true;
+
+  var _enabled = (function(){
+    try{ return localStorage.getItem('aura_infinibit') !== '0'; }catch(e){ return true; }
+  })();
+
+  if(!_enabled){
+    console.log('[InfiniBit] disabled via localStorage');
+    return;
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // InfiniBit — unidad de estado expandido
+  // ─────────────────────────────────────────────────────────────────
+  // mode puede ser: 'binary' | 'continuous' | 'superposition' |
+  //                 'non-superposition' | 'mixed' | 'contextual'
+  // El sistema puede estar en:
+  //   - binario (0/1 clásico)
+  //   - continuo (valor gradual)
+  //   - superposición (múltiples estados simultáneos)
+  //   - no-superposición (estados mutuamente exclusivos)
+  //   - o cualquier combinación de los anteriores
+
+  class InfiniBit {
+    constructor({ amplitude=0, uncertainty=0, coherence=1, polarity=0, persistence=0, mode='contextual' } = {}){
+      this.amplitude   = amplitude;   // 0..1  — intensidad del estado
+      this.uncertainty = uncertainty; // 0..1  — indeterminación
+      this.coherence   = coherence;   // 0..1  — estabilidad / convergencia
+      this.polarity    = polarity;    // -1..1 — orientación / valencia
+      this.persistence = persistence; // 0..1  — duración prevista
+      this.mode        = mode;
+    }
+    // Colapso a booleano — compatibilidad con código existente
+    collapse(){
+      return this.coherence > 0.5 && this.amplitude > 0.5;
+    }
+    // Snapshot serializable
+    snapshot(){
+      return {
+        amplitude:   this.amplitude,
+        uncertainty: this.uncertainty,
+        coherence:   this.coherence,
+        polarity:    this.polarity,
+        persistence: this.persistence,
+        mode:        this.mode
+      };
+    }
+    patch(delta){
+      Object.keys(delta).forEach(k => {
+        if(k in this) this[k] = delta[k];
+      });
+      return this;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // InfiniState — estado global expandido (convive con window.S)
+  // ─────────────────────────────────────────────────────────────────
+  window.InfiniState = {
+    thinking:  new InfiniBit(),
+    speaking:  new InfiniBit(),
+    listening: new InfiniBit(),
+    evolving:  new InfiniBit(),
+
+    update(key, patch){
+      if(!this[key] || !(this[key] instanceof InfiniBit)) return false;
+      this[key].patch(patch);
+      return true;
+    },
+
+    snapshot(){
+      return {
+        thinking:  this.thinking.snapshot(),
+        speaking:  this.speaking.snapshot(),
+        listening: this.listening.snapshot(),
+        evolving:  this.evolving.snapshot()
+      };
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // CollapseEngine — traduce estados continuos → acciones discretas
+  // ─────────────────────────────────────────────────────────────────
+  window.CollapseEngine = {
+    thresholds: { coherence: 0.7, uncertainty: 0.5, amplitude: 0.3 },
+
+    // Decisión blanda — score 0..1
+    collapse(bit){
+      var conf = bit.coherence * bit.amplitude * (1 - bit.uncertainty);
+      return Math.max(0, Math.min(1, conf));
+    },
+
+    // Decisión booleana
+    shouldAct(bit){
+      return bit.coherence   >  this.thresholds.coherence &&
+             bit.uncertainty <  this.thresholds.uncertainty &&
+             bit.amplitude   >= this.thresholds.amplitude;
+    },
+
+    // Configurar thresholds en runtime
+    configure(patch){
+      Object.assign(this.thresholds, patch);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // AuraMeta — auto-observación del sistema
+  // ─────────────────────────────────────────────────────────────────
+  window.AuraMeta = {
+    _log:    [],
+    _maxLog: 200,
+
+    observe({ state, errors, performance } = {}){
+      var entry = {
+        ts:          Date.now(),
+        state:       state       || null,
+        errors:      errors      || [],
+        performance: performance || {}
+      };
+      this._log.push(entry);
+      if(this._log.length > this._maxLog) this._log.shift();
+      return entry;
+    },
+
+    diagnose(){
+      var issues = [];
+
+      // ¿S.busy bloqueado?
+      try{
+        if(window.S && window.S.busy){
+          var bsince = window.__auraBusySince;
+          if(bsince && (Date.now() - bsince) > 30000){
+            issues.push({ type:'busy_stuck', since:bsince, elapsed:Date.now()-bsince });
+          }
+        }
+      }catch(e){}
+
+      // ¿InfiniState con alta incertidumbre?
+      try{
+        var snap = window.InfiniState ? window.InfiniState.snapshot() : null;
+        if(snap){
+          Object.keys(snap).forEach(function(k){
+            if(snap[k].uncertainty > 0.8){
+              issues.push({ type:'high_uncertainty', dimension:k, value:snap[k].uncertainty });
+            }
+          });
+        }
+      }catch(e){}
+
+      // ¿AuraLock bloqueado?
+      try{
+        if(window.AuraLock && typeof window.AuraLock.isLocked === 'function' && window.AuraLock.isLocked()){
+          issues.push({ type:'lock_held', info:'AuraLock is currently locked' });
+        }
+      }catch(e){}
+
+      // ¿Errores recientes en log?
+      try{
+        var recent = this._log.slice(-10);
+        var errCount = recent.reduce(function(n,e){ return n + (e.errors && e.errors.length ? e.errors.length : 0); }, 0);
+        if(errCount > 3){
+          issues.push({ type:'error_spike', count:errCount, window:'last 10 observations' });
+        }
+      }catch(e){}
+
+      return {
+        ts:          Date.now(),
+        build:       window.BUILD || 'unknown',
+        issues:      issues,
+        healthy:     issues.length === 0,
+        infiniState: window.InfiniState ? window.InfiniState.snapshot() : null
+      };
+    },
+
+    anomalies(){
+      return this._log.filter(function(e){ return e.errors && e.errors.length > 0; });
+    },
+
+    // Historial compacto de los últimos N eventos
+    tail(n){
+      n = n || 20;
+      return this._log.slice(-n);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // AuraEvolution — auto-edición supervisada (staging solamente)
+  // ─────────────────────────────────────────────────────────────────
+  // IMPORTANTE: apply() requiere { confirmed: true } explícito.
+  // No escribe ficheros. Claude aplica los cambios aprobados.
+
+  window.AuraEvolution = {
+    _proposals: [],
+    _nextId:    1,
+
+    propose({ file, patch, reason, author } = {}){
+      var id = this._nextId++;
+      var p = {
+        id:     id,
+        ts:     Date.now(),
+        file:   file   || 'index.html',
+        patch:  patch  || null,
+        reason: reason || '',
+        author: author || 'system',
+        status: 'pending'
+      };
+      this._proposals.push(p);
+      console.log('[AuraEvolution] proposal #' + id + ': ' + p.reason);
+      return id;
+    },
+
+    list(){
+      return this._proposals.map(function(p){
+        return {
+          id:     p.id,
+          ts:     new Date(p.ts).toISOString(),
+          file:   p.file,
+          reason: p.reason,
+          author: p.author,
+          status: p.status
+        };
+      });
+    },
+
+    preview(id){
+      var p = this._proposals.find(function(x){ return x.id === id; });
+      return p ? Object.assign({}, p) : null;
+    },
+
+    // Marcar como aprobado (staging) — NO aplica el parche
+    // El cambio real lo hace Claude bajo supervisión de JR
+    apply(id, opts){
+      opts = opts || {};
+      if(!opts.confirmed){
+        console.warn('[AuraEvolution] apply() requiere { confirmed:true } — no se auto-aplica');
+        return { ok:false, reason:'confirmation required' };
+      }
+      var p = this._proposals.find(function(x){ return x.id === id; });
+      if(!p)              return { ok:false, reason:'not found' };
+      if(p.status !== 'pending') return { ok:false, reason:'not pending: ' + p.status };
+      p.status = 'approved';
+      console.log('[AuraEvolution] #' + id + ' approved (staging only — Claude applies)');
+      return { ok:true, proposal:Object.assign({},p) };
+    },
+
+    reject(id){
+      var p = this._proposals.find(function(x){ return x.id === id; });
+      if(!p) return false;
+      p.status = 'rejected';
+      return true;
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // Bridge pasivo — sincroniza InfiniState con eventos AURA existentes
+  // No modifica ningún módulo existente. Solo escucha.
+  // ─────────────────────────────────────────────────────────────────
+  (function _bridge(){
+    var IS = window.InfiniState;
+    var MA = window.AuraMeta;
+
+    window.addEventListener('aura:turn:start', function(ev){
+      try{
+        IS.update('thinking', { amplitude:0.9, coherence:0.8, uncertainty:0.15, mode:'continuous' });
+        IS.update('speaking', { amplitude:0.1, coherence:0.9, uncertainty:0.1 });
+        MA.observe({ state:IS.snapshot(), errors:[] });
+      }catch(e){}
+    });
+
+    window.addEventListener('aura:turn:end', function(ev){
+      try{
+        IS.update('thinking', { amplitude:0.1, coherence:1.0, uncertainty:0.05, mode:'contextual' });
+        MA.observe({ state:IS.snapshot(), errors:[] });
+      }catch(e){}
+    });
+
+    window.addEventListener('aura:turn:error', function(ev){
+      try{
+        var err = (ev && ev.detail && ev.detail.error) ? [String(ev.detail.error)] : ['unknown'];
+        IS.update('thinking', { amplitude:0.2, coherence:0.3, uncertainty:0.8, mode:'mixed' });
+        MA.observe({ state:IS.snapshot(), errors:err });
+      }catch(e){}
+    });
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
+  // Registro y diagnóstico inicial
+  // ─────────────────────────────────────────────────────────────────
+  window.AuraKernel = window.AuraKernel || {};
+  window.AuraKernel.infinibit = {
+    version:  'v1',
+    enabled:  true,
+    modules:  ['InfiniBit','InfiniState','CollapseEngine','AuraMeta','AuraEvolution'],
+    // shortcut diagnóstico
+    status:   function(){ return window.AuraMeta.diagnose(); }
+  };
+
+  console.log('[InfiniBit v1] online — InfiniState, CollapseEngine, AuraMeta, AuraEvolution listos');
 })();
 </script>
 
