@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r21-trading"/>
-<meta name="aura-build" content="IndexASv5.5.4-r21-trading"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r21-trading</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r22-oai-voice"/>
+<meta name="aura-build" content="IndexASv5.5.4-r22-oai-voice"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r22-oai-voice</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r21-trading";var VERSION="vIndexASv5.5.4-r21-trading";</script>
+<script>var BUILD="IndexASv5.5.4-r22-oai-voice";var VERSION="vIndexASv5.5.4-r22-oai-voice";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -16723,6 +16723,393 @@ window.forceEnterAura = function(ev){
   })();
 
   console.log('[AuraTrading v1.0] instalado — Binance klines OHLCV + señales supervisadas + monitor');
+})();
+</script>
+
+
+<script id="aura-oai-voice-v1">
+// ═══════════════════════════════════════════════════════════════════
+// AuraOAIVoice v1.0  (Phase A+B)
+//
+// Autoridad de voz definitiva:
+//   1. OAI TTS   (si enabled + key)  ← CANÓNICA
+//   2. AURA_NATIVE Android           ← fallback sin key
+//   3. Web Speech API / speechSynthesis ← legacy / cuarentena
+//
+// Fase A: TTS  via /v1/audio/speech   → Audio element (mp3)
+// Fase B: STT  via /v1/audio/transcriptions (Whisper) → MediaRecorder
+// Fase C/D (futuro): OpenAI Realtime WebSocket
+//
+// SEGURIDAD: clave almacenada como S.openaiKey / localStorage('a_oaikey')
+// — mismo modelo que S.key (Groq), S.claudeKey, etc. ya existentes.
+// Para ephemeral tokens (Realtime): usar S.jfUrl como relay local.
+//
+// NO toca funciones congeladas (send, onNativeSTT, onTranscript).
+// Transcript de Whisper → window.__auraProcessAuraInput directamente.
+// ═══════════════════════════════════════════════════════════════════
+(function(){
+  if(window.AuraOAIVoice && window.AuraOAIVoice._installed) return;
+
+  // ── Key ───────────────────────────────────────────────────────────
+  function _getKey(){ return (window.S && window.S.openaiKey) || localStorage.getItem('a_oaikey') || ''; }
+  function _setKey(k){
+    k = (k||'').trim();
+    try{ localStorage.setItem('a_oaikey', k); }catch(e){}
+    if(window.S) window.S.openaiKey = k;
+  }
+
+  // ── Config ────────────────────────────────────────────────────────
+  var _cfg = { ttsModel:'tts-1', voice:'nova', lang:'es' };
+  try{ var _sc=JSON.parse(localStorage.getItem('a_oaivoice_cfg')||'{}'); Object.assign(_cfg,_sc); }catch(e){}
+  function _saveCfg(){ try{localStorage.setItem('a_oaivoice_cfg',JSON.stringify(_cfg));}catch(e){} }
+
+  // ── Phase A — TTS: /v1/audio/speech ──────────────────────────────
+  // Latencia real: ~300-800ms hasta primer byte de audio.
+  // Honesto: hay lag de red. Para conversación fluida → Phase C (Realtime).
+  async function _speak(text, opts){
+    var key = _getKey();
+    if(!key) throw new Error('sin OpenAI key');
+    text = (text||'').trim().slice(0,4096); // límite API
+    if(!text) return;
+
+    var resp = await fetch('https://api.openai.com/v1/audio/speech',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model: (opts&&opts.model)||_cfg.ttsModel,
+        input: text,
+        voice: (opts&&opts.voice)||_cfg.voice,
+        response_format:'mp3'
+      })
+    });
+    if(!resp.ok){
+      var eb = await resp.text().catch(function(){return '';});
+      throw new Error('OAI TTS HTTP '+resp.status+' '+eb.slice(0,120));
+    }
+
+    var blob = await resp.blob();
+    var url  = URL.createObjectURL(blob);
+
+    return new Promise(function(resolve, reject){
+      var a = new Audio(url);
+      window.AuraOAIVoice._currentAudio = a;
+      a.onended = function(){ URL.revokeObjectURL(url); window.AuraOAIVoice._currentAudio=null; resolve(); };
+      a.onerror = function(){ URL.revokeObjectURL(url); window.AuraOAIVoice._currentAudio=null; reject(new Error('audio playback error')); };
+      a.play().catch(function(e){ URL.revokeObjectURL(url); window.AuraOAIVoice._currentAudio=null; reject(e); });
+    });
+  }
+
+  // ── Phase B — STT: Whisper /v1/audio/transcriptions ──────────────
+  // MediaRecorder captura audio → blob webm/ogg → POST multipart.
+  // Latencia: ~500-2000ms según duración. No es streaming — es batch.
+  // Para streaming real de voz → Phase C (Realtime WebSocket).
+  var _recorder = null, _chunks = [], _recStream = null, _recording = false;
+
+  async function _startRec(){
+    if(_recording) return;
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      throw new Error('getUserMedia no disponible');
+    }
+    var stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+    _recStream = stream;
+
+    var mime = ['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/webm']
+      .find(function(t){ return MediaRecorder.isTypeSupported(t); }) || 'audio/webm';
+
+    _recorder = new MediaRecorder(stream,{mimeType:mime});
+    _chunks = [];
+    _recorder.ondataavailable = function(e){ if(e.data.size>0) _chunks.push(e.data); };
+    _recorder.onstop = function(){
+      if(_recStream){ _recStream.getTracks().forEach(function(t){t.stop();}); _recStream=null; }
+      var ext = mime.includes('ogg')?'ogg':'webm';
+      _sendToWhisper(new Blob(_chunks,{type:mime}), ext);
+    };
+    _recorder.start(1000);
+    _recording = true;
+
+    try{ var sf=window.sig; if(typeof sf==='function') sf('🎤 OAI-STT — grabando','rgba(0,196,140,.5)'); }catch(e){}
+    try{ if(typeof toast==='function') toast('🎤 Grabando — toca de nuevo para enviar'); }catch(e){}
+  }
+
+  function _stopRec(){
+    if(!_recording||!_recorder) return;
+    _recorder.stop(); _recorder=null; _recording=false;
+    try{ var sf=window.sig; if(typeof sf==='function') sf('[◈] OAI-STT — procesando...','rgba(255,196,0,.5)'); }catch(e){}
+  }
+
+  async function _sendToWhisper(blob, ext){
+    var key = _getKey();
+    if(!key){ console.warn('[AuraOAIVoice] sin key para Whisper'); return; }
+    try{
+      var form = new FormData();
+      form.append('file', blob, 'audio.'+ext);
+      form.append('model','whisper-1');
+      form.append('language', _cfg.lang);
+      form.append('response_format','text');
+
+      var resp = await fetch('https://api.openai.com/v1/audio/transcriptions',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+key},
+        body:form
+      });
+      if(!resp.ok) throw new Error('Whisper HTTP '+resp.status);
+
+      var transcript = (await resp.text()).trim();
+      if(!transcript){
+        try{ if(typeof toast==='function') toast('[STT] Sin voz detectada'); }catch(e){}
+        return;
+      }
+
+      // → pipeline principal de AURA (gateado, sin tocar funciones congeladas)
+      try{
+        if(typeof window.__auraProcessAuraInput==='function'){
+          window.__auraProcessAuraInput(transcript, {fromOAISTT:true, voice:true});
+        } else if(typeof window.send==='function'){
+          window.send(transcript);
+        }
+      }catch(e){ console.warn('[AuraOAIVoice] dispatch error:',e.message); }
+
+      try{ var sf=window.sig; if(typeof sf==='function') sf('[◈] OAI-STT → "'+transcript.slice(0,50)+'"','rgba(0,196,140,.6)'); }catch(e){}
+    }catch(e){
+      console.warn('[AuraOAIVoice] Whisper error:',e.message);
+      try{ if(typeof toast==='function') toast('[STT] Error: '+e.message.slice(0,60)); }catch(e2){}
+    }
+  }
+
+  // ── AuraOAIVoice public API ───────────────────────────────────────
+  window.AuraOAIVoice = {
+    _installed:true, VERSION:'v1.0-phaseAB',
+    enabled:false, _currentAudio:null,
+    config:_cfg,
+
+    isReady:    function(){ return this.enabled && !!_getKey(); },
+    hasKey:     function(){ return !!_getKey(); },
+    speakAsync: _speak,
+    stopSpeak:  function(){ if(this._currentAudio){this._currentAudio.pause();this._currentAudio=null;} },
+    startRec:   _startRec,
+    stopRec:    _stopRec,
+    isRecording:function(){ return _recording; },
+    toggleRec:  function(){ if(_recording) _stopRec(); else _startRec().catch(function(e){ try{if(typeof toast==='function')toast('[STT] '+e.message);}catch(_e){} }); },
+    setKey:     _setKey,
+    getKey:     _getKey,
+    setVoice:   function(v){ var ok={alloy:1,echo:1,fable:1,nova:1,onyx:1,shimmer:1}; if(!ok[v])return false; _cfg.voice=v; _saveCfg(); return true; },
+    setModel:   function(m){ if(m!=='tts-1'&&m!=='tts-1-hd')return false; _cfg.ttsModel=m; _saveCfg(); return true; },
+
+    enable: function(){
+      if(!_getKey()){ console.warn('[AuraOAIVoice] sin key'); return false; }
+      this.enabled = true;
+      _hookVMSpeak();
+      _hookStartVoice();
+      try{ var sf=window.sig; if(typeof sf==='function') sf('[◈] OAI Voice ON','rgba(0,196,140,.6)'); }catch(e){}
+      console.log('[AuraOAIVoice] ENABLED — TTS:'+_cfg.ttsModel+'/'+_cfg.voice);
+      return true;
+    },
+    disable: function(){
+      this.enabled = false;
+      _unhookVMSpeak();
+      _unhookStartVoice();
+      try{ var sf=window.sig; if(typeof sf==='function') sf('[◈] OAI Voice OFF','rgba(100,116,139,.4)'); }catch(e){}
+      console.log('[AuraOAIVoice] DISABLED — back to Web Speech / AURA_NATIVE');
+    }
+  };
+
+  // ── Hook A: VoiceManager.speak → OAI TTS ─────────────────────────
+  // Punto de intercepción limpio: TODAS las rutas TTS pasan por aquí.
+  //   AuraCompanion.speakLatest → VoiceManager.speak  ← hookeamos aquí
+  //   window.speak              → VoiceManager.speak  ← mismo hook
+  //   manualSpeak               → VoiceManager.speak  ← mismo hook
+  // Estado SPEAKING de VoiceManager: no se actualiza con OAI (Phase A).
+  // Se resuelve en Phase C con Realtime + eventos propios.
+  var _origVMSpeak = null;
+  function _hookVMSpeak(){
+    var VM = window.VoiceManager;
+    if(!VM || _origVMSpeak) return;
+    _origVMSpeak = VM.speak;
+    VM.speak = async function(text){
+      var OAI = window.AuraOAIVoice;
+      if(OAI && OAI.enabled && OAI.hasKey()){
+        try{ await OAI.speakAsync(text); return; }
+        catch(e){ console.warn('[AuraOAIVoice] TTS fallback →',e.message); }
+      }
+      return _origVMSpeak.apply(this, arguments);
+    };
+    VM.speak.__oaiHooked = 'oai-voice-v1';
+  }
+  function _unhookVMSpeak(){
+    var VM = window.VoiceManager;
+    if(!VM || !_origVMSpeak) return;
+    VM.speak = _origVMSpeak; _origVMSpeak = null;
+  }
+
+  // ── Hook B: window.startVoice → OAI Whisper rec ──────────────────
+  // Cuando OAI está activo, el botón de mic graba con MediaRecorder
+  // y envía a Whisper en lugar de usar Web Speech Recognition.
+  var _origStartVoice = null;
+  function _hookStartVoice(){
+    if(_origStartVoice) return;
+    _origStartVoice = window.startVoice;
+    window.startVoice = function(){
+      var OAI = window.AuraOAIVoice;
+      if(OAI && OAI.enabled && OAI.hasKey()){ OAI.toggleRec(); return; }
+      return _origStartVoice && _origStartVoice.apply(this, arguments);
+    };
+    window.startVoice.__oaiHooked = 'oai-voice-v1';
+  }
+  function _unhookStartVoice(){
+    if(!_origStartVoice) return;
+    window.startVoice = _origStartVoice; _origStartVoice = null;
+  }
+
+  // ── handleCmd: /voice oai * ───────────────────────────────────────
+  (function(){
+    var _orig = window.handleCmd;
+    if(typeof _orig!=='function'||_orig.__oaiVoiceLayer) return;
+
+    window.handleCmd = function(cmd){
+      var p    = (cmd||'').trim().split(/\s+/);
+      var base = (p[0]||'').slice(1).toLowerCase();
+      var s1   = (p[1]||'').toLowerCase();
+      var s2   = (p[2]||'').toLowerCase();
+      var OAI  = window.AuraOAIVoice;
+
+      if(base==='voice' && s1==='oai'){
+
+        // key
+        if(s2==='key'||s2==='k'){
+          var k = p[3]||'';
+          if(!k){ try{if(typeof addMsg==='function')addMsg('aura','Uso: /voice oai key sk-...');}catch(e){} return Promise.resolve(true); }
+          OAI.setKey(k);
+          try{ if(typeof toast==='function') toast('[OAI Voice] key guardada'); }catch(e){}
+          try{ if(typeof addMsg==='function') addMsg('aura','[OAI Voice] Key guardada.\nUsa /voice oai on para activar.'); }catch(e){}
+          return Promise.resolve(true);
+        }
+
+        // on
+        if(s2==='on'){
+          var ok = OAI.enable();
+          try{
+            if(typeof addMsg==='function') addMsg('aura', ok
+              ? '[OAI Voice] ACTIVO\n\nTTS: '+OAI.config.ttsModel+' / voz: '+OAI.config.voice+'\nSTT: Whisper-1 (Fase B)\n\nVoiceManager.speak → OpenAI TTS\nwindow.startVoice → Whisper (graba + transcribe)'
+              : '[OAI Voice] Falta la key. Usa /voice oai key sk-...');
+          }catch(e){}
+          return Promise.resolve(true);
+        }
+
+        // off
+        if(s2==='off'){
+          OAI.disable();
+          try{ if(typeof addMsg==='function') addMsg('aura','[OAI Voice] desactivado — vuelve a Web Speech / AURA_NATIVE'); }catch(e){}
+          return Promise.resolve(true);
+        }
+
+        // test
+        if(s2==='test'){
+          if(!OAI.hasKey()){ try{if(typeof addMsg==='function')addMsg('aura','[OAI Voice] Sin key.');}catch(e){} return Promise.resolve(true); }
+          try{ if(typeof addMsg==='function') addMsg('aura','[OAI Voice] Probando TTS...'); }catch(e){}
+          OAI.speakAsync('Hola, soy AURA. Esta es mi nueva voz OpenAI.').then(function(){
+            try{ if(typeof addMsg==='function') addMsg('aura','[OAI Voice] Test OK — voz: '+OAI.config.voice+' · modelo: '+OAI.config.ttsModel); }catch(e){}
+          }).catch(function(err){
+            try{ if(typeof addMsg==='function') addMsg('aura','[OAI Voice] Error: '+err.message); }catch(e){}
+          });
+          return Promise.resolve(true);
+        }
+
+        // rec
+        if(s2==='rec'){
+          if(!OAI.hasKey()){ try{if(typeof addMsg==='function')addMsg('aura','[OAI Voice] Sin key para Whisper.');}catch(e){} return Promise.resolve(true); }
+          OAI.toggleRec();
+          try{ if(typeof addMsg==='function') addMsg('aura','[OAI Voice] '+(OAI.isRecording()?'🎤 Grabando — /voice oai rec de nuevo para enviar':'Procesando con Whisper...')); }catch(e){}
+          return Promise.resolve(true);
+        }
+
+        // voice [nombre]
+        if(s2==='voice'||s2==='voz'){
+          var vn = (p[3]||'').toLowerCase();
+          var vs = ['alloy','echo','fable','nova','onyx','shimmer'];
+          if(!vn){ try{if(typeof addMsg==='function')addMsg('aura','Voces: '+vs.join(', ')+'\nActual: '+OAI.config.voice+'\nUso: /voice oai voice [nombre]');}catch(e){} return Promise.resolve(true); }
+          var ok2 = OAI.setVoice(vn);
+          try{ if(typeof addMsg==='function') addMsg('aura','[OAI Voice] '+(ok2?'Voz: '+vn:'Voz inválida. Opciones: '+vs.join(', '))); }catch(e){}
+          return Promise.resolve(true);
+        }
+
+        // model [tts-1|tts-1-hd]
+        if(s2==='model'){
+          var mn = p[3]||'';
+          var ok3 = OAI.setModel(mn);
+          try{ if(typeof addMsg==='function') addMsg('aura','[OAI Voice] '+(ok3?'Modelo: '+mn:'Modelos válidos: tts-1 (rápido) · tts-1-hd (calidad)')); }catch(e){}
+          return Promise.resolve(true);
+        }
+
+        // /voice oai → status
+        try{
+          if(typeof addMsg==='function') addMsg('aura',[
+            '[ [◈] OAI VOICE '+OAI.VERSION+' ]','',
+            'Estado:     '+(OAI.enabled?'ACTIVO':'inactivo'),
+            'Key:        '+(OAI.hasKey()?OAI.getKey().slice(0,14)+'...':'no configurada — /voice oai key sk-...'),
+            'TTS model:  '+OAI.config.ttsModel+' ('+(OAI.config.ttsModel==='tts-1-hd'?'alta calidad':'rápido')+')',
+            'Voz:        '+OAI.config.voice,
+            'STT:        Whisper-1 (Fase B — batch, no streaming)',
+            '',
+            'Hooks activos:',
+            '  VoiceManager.speak: '+(window.VoiceManager&&window.VoiceManager.speak&&window.VoiceManager.speak.__oaiHooked?'✓ OAI TTS':'✗ Web Speech'),
+            '  window.startVoice:  '+(window.startVoice&&window.startVoice.__oaiHooked?'✓ Whisper rec':'✗ Web STT'),
+            '',
+            'Autoridad de voz:',
+            '  1. OAI TTS/Whisper  ← CANÓNICA (si enabled+key)',
+            '  2. AURA_NATIVE      ← fallback Android',
+            '  3. Web Speech API   ← legacy',
+            '',
+            'Comandos:',
+            '  /voice oai key sk-...        → guardar key',
+            '  /voice oai on / off          → activar / desactivar',
+            '  /voice oai test              → test TTS inmediato',
+            '  /voice oai rec               → toggle grabación Whisper',
+            '  /voice oai voice [nombre]    → alloy · echo · fable · nova · onyx · shimmer',
+            '  /voice oai model [tts-1|hd]  → modelo TTS',
+            '',
+            'Fases siguientes:',
+            '  Fase C: Realtime WebSocket (barge-in, VAD, latencia <200ms)',
+            '  Fase D: interrupción real + estado SPEAKING en VoiceManager'
+          ].join('\n'));
+        }catch(e){}
+        return Promise.resolve(true);
+      }
+
+      return _orig.apply(this, arguments);
+    };
+
+    window.handleCmd.__oaiVoiceLayer = 'oai-voice-v1';
+    window._handleCmd = window.handleCmd;
+    console.log('[AuraOAIVoice] handleCmd extendido — /voice oai *');
+  })();
+
+  // ── Sincronizar key desde S al arrancar ───────────────────────────
+  (function(){
+    try{
+      var saved = localStorage.getItem('a_oaikey')||'';
+      if(window.S && !window.S.openaiKey) window.S.openaiKey = saved;
+      // Si ya había key guardada y OAI estaba activo en sesión anterior → activar
+      var wasEnabled = localStorage.getItem('a_oaivoice_enabled')==='1';
+      if(wasEnabled && saved){
+        setTimeout(function(){ try{ window.AuraOAIVoice.enable(); }catch(e){} }, 300);
+      }
+    }catch(e){}
+  })();
+
+  // Persistir estado enabled al cambiar
+  var _origEnable = window.AuraOAIVoice.enable.bind(window.AuraOAIVoice);
+  window.AuraOAIVoice.enable = function(){
+    var r = _origEnable();
+    try{ localStorage.setItem('a_oaivoice_enabled', r?'1':'0'); }catch(e){}
+    return r;
+  };
+  var _origDisable = window.AuraOAIVoice.disable.bind(window.AuraOAIVoice);
+  window.AuraOAIVoice.disable = function(){
+    _origDisable();
+    try{ localStorage.setItem('a_oaivoice_enabled','0'); }catch(e){}
+  };
+
+  console.log('[AuraOAIVoice v1.0-phaseAB] instalado — /voice oai key [...] para activar');
 })();
 </script>
 
