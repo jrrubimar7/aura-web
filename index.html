@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r25-describe-proposal"/>
-<meta name="aura-build" content="IndexASv5.5.4-r25-describe-proposal"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r25-describe-proposal</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r26-voice-controller"/>
+<meta name="aura-build" content="IndexASv5.5.4-r26-voice-controller"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r26-voice-controller</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r25-describe-proposal";var VERSION="vIndexASv5.5.4-r25-describe-proposal";</script>
+<script>var BUILD="IndexASv5.5.4-r26-voice-controller";var VERSION="vIndexASv5.5.4-r26-voice-controller";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -17800,6 +17800,499 @@ window.forceEnterAura = function(ev){
   }catch(e){}
 
   console.log('[AuraRealtime v1.0-phaseCD] instalado — /voice oai realtime on para activar');
+})();
+</script>
+
+
+<script id="aura-voice-controller-v1">
+// ═══════════════════════════════════════════════════════════════════
+// VoiceController v1 — FSM conversacional tipo Her/JARVIS
+//
+// Capa de orquestación sobre VoiceManager + cadenas OAI / Realtime.
+// NO reemplaza VoiceManager. NO rompe OAI ni Realtime.
+//
+// FSM: idle ──► listening ──► processing ──► speaking ──► cooldown ──► listening
+//               ▲                                                           │
+//               └───────────────────────────────────────────────────────────┘
+//
+// Delegación por prioridad:
+//   1. AuraRealtime   — WebSocket activo (server VAD, loop interno)
+//   2. AuraOAIVoice   — Whisper STT + OAI TTS (loop orquestado por VC)
+//   3. WebSpeech      — VoiceManager.startConversation() (loop nativo)
+//
+// API pública:
+//   VoiceController.startLoop()      — iniciar modo conversacional
+//   VoiceController.stopLoop()       — detener
+//   VoiceController.toggleLoop()     — alternar
+//   VoiceController.getState()       — estado FSM actual
+//   VoiceController.isActive()       — loop activo
+//   VoiceController.onStateChange(fn)— suscripción a cambios de estado
+//
+// Comandos: /voice vc on | off | toggle | once | status
+//
+// Identidad: cuando el loop está activo, buildSystemPrompt inyecta
+//   contexto de capacidades de voz → AURA deja de decir "solo soy texto"
+//
+// AE proposals: "ten voz"/"modo conversación"/"quiero hablar contigo"
+//   → propuesta real (no placeholder) + activación inmediata en runtime
+// ═══════════════════════════════════════════════════════════════════
+(function(){
+  if(window.VoiceController && window.VoiceController._installed) return;
+
+  // ── FSM States ────────────────────────────────────────────────────
+  // Usa los mismos strings que VoiceManager.STATES para compatibilidad
+  var VC = {
+    IDLE:       'idle',
+    LISTENING:  'listening',
+    PROCESSING: 'processing',
+    SPEAKING:   'speaking',
+    COOLDOWN:   'cooldown',
+    ERROR:      'error'
+  };
+
+  var _state      = VC.IDLE;
+  var _active     = false;
+  var _prevVMState = null;    // último estado VM conocido (para detectar transición SPEAKING→IDLE)
+  var _errorCount = 0;
+  var _listeners  = [];
+  var _coolTimer  = null;
+
+  // ── ConversationPolicy ────────────────────────────────────────────
+  var POLICY = {
+    cooldownMs:    800,   // espera tras TTS antes de volver a escuchar
+    maxErrors:     4,     // errores consecutivos → auto-pause
+    retryDelayMs:  1500   // espera antes de reintentar tras error
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────
+  function _setState(s){
+    if(_state === s) return;
+    _state = s;
+    _listeners.forEach(function(fn){ try{ fn(s); }catch(e){} });
+    _updateUI(s);
+  }
+
+  function _canListen(){
+    return _state === VC.IDLE || _state === VC.COOLDOWN || _state === VC.ERROR;
+  }
+
+  function _log(msg){ console.log('[VoiceController] ' + msg); }
+
+  // ── Backend detector ──────────────────────────────────────────────
+  function _backend(){
+    if(window.AuraRealtime && window.AuraRealtime._installed &&
+       typeof window.AuraRealtime.isConnected === 'function' &&
+       window.AuraRealtime.isConnected()){
+      return 'realtime';
+    }
+    if(window.AuraOAIVoice && window.AuraOAIVoice._installed &&
+       typeof window.AuraOAIVoice.hasKey === 'function' &&
+       window.AuraOAIVoice.hasKey()){
+      return 'oai';
+    }
+    if(window.VoiceManager){ return 'webspeech'; }
+    return null;
+  }
+
+  // ── VoiceUIBinder ─────────────────────────────────────────────────
+  var _UI_RING = {
+    idle:       '',
+    listening:  '0 0 0 3px #22c55e, 0 0 14px #22c55e55',
+    processing: '0 0 0 3px #f59e0b, 0 0 10px #f59e0b44',
+    speaking:   '0 0 0 3px #818cf8, 0 0 10px #818cf844',
+    cooldown:   '0 0 0 2px #64748b55',
+    error:      '0 0 0 3px #ef4444, 0 0 10px #ef444444'
+  };
+
+  function _getMicBtn(){
+    return document.getElementById('mic-btn') ||
+           document.querySelector('[onclick*="toggleMic"],[onclick*="jarvisToggle"],[data-role="mic"]');
+  }
+
+  function _updateUI(state){
+    try{
+      var btn = _getMicBtn();
+      if(!btn) return;
+      ['vc-idle','vc-listening','vc-processing','vc-speaking','vc-cooldown','vc-error']
+        .forEach(function(c){ btn.classList.remove(c); });
+      btn.classList.add('vc-' + state);
+      btn.style.boxShadow = _UI_RING[state] || '';
+      // Accesibilidad: aria-label dinámico
+      var labels = { idle:'Micrófono', listening:'Escuchando...', processing:'Procesando...',
+                     speaking:'Hablando...', cooldown:'Pausa...', error:'Error de voz' };
+      btn.setAttribute('aria-label', labels[state] || 'Micrófono');
+    }catch(e){}
+  }
+
+  // ── Loop principal ────────────────────────────────────────────────
+  function startLoop(){
+    if(_active){ _log('loop ya activo'); return; }
+    _active = true;
+    _errorCount = 0;
+    _log('startLoop() — backend=' + (_backend() || 'ninguno'));
+    // Desmutar si estaba silenciado
+    try{
+      if(window.VoiceManager && VoiceManager.isMuted()){ VoiceManager.unmute(); }
+    }catch(e){}
+    _enterListening();
+  }
+
+  function stopLoop(){
+    if(!_active) return;
+    _active = false;
+    _log('stopLoop()');
+    clearTimeout(_coolTimer);
+    // Parar cadenas según backend activo
+    try{ if(window.VoiceManager && VoiceManager.isConvMode()) VoiceManager.stopConversation(); }catch(e){}
+    try{ if(window.VoiceManager) VoiceManager.stopPunctualMic(); }catch(e){}
+    _setState(VC.IDLE);
+  }
+
+  function toggleLoop(){
+    if(_active) stopLoop(); else startLoop();
+  }
+
+  // ── Transiciones FSM ──────────────────────────────────────────────
+  function _enterListening(){
+    if(!_active) return;
+    if(!_canListen()){ _log('_enterListening blocked — state=' + _state); return; }
+    var backend = _backend();
+    if(!backend){ _log('sin backend de voz'); _setState(VC.ERROR); return; }
+    _setState(VC.LISTENING);
+
+    if(backend === 'realtime'){
+      // Realtime gestiona su propio loop con server VAD
+      // Solo asegurar que esté conectado y escuchando
+      try{
+        if(!window.AuraRealtime.isConnected()){
+          window.AuraRealtime.start().catch(function(e){
+            _log('RT start() falló: ' + e.message);
+            _onError();
+          });
+        }
+        // La captura de audio ya está activa si el WS está abierto
+      }catch(e){ _onError(); }
+
+    } else if(backend === 'oai'){
+      // OAI: un disparo puntual de Whisper STT
+      // startPunctualMic de VoiceManager delega a OAI si está hookeado
+      try{
+        if(window.VoiceManager) VoiceManager.startPunctualMic();
+      }catch(e){ _onError(); }
+
+    } else {
+      // WebSpeech: usar el loop nativo de VoiceManager
+      try{
+        if(window.VoiceManager && !VoiceManager.isConvMode()){
+          VoiceManager.startConversation();
+        }
+      }catch(e){ _onError(); }
+    }
+  }
+
+  function _enterCooldown(){
+    if(!_active) return;
+    _setState(VC.COOLDOWN);
+    clearTimeout(_coolTimer);
+    _coolTimer = setTimeout(function(){
+      if(!_active || _state !== VC.COOLDOWN) return;
+      _setState(VC.IDLE);
+      _enterListening();
+    }, POLICY.cooldownMs);
+  }
+
+  function _onError(){
+    _errorCount++;
+    _log('error #' + _errorCount);
+    if(_errorCount >= POLICY.maxErrors){
+      _log('maxErrors alcanzado — auto-pause');
+      _active = false;
+      _setState(VC.ERROR);
+      try{
+        if(typeof window.addMsg === 'function'){
+          window.addMsg('aura',
+            'Modo conversacional en pausa por errores repetidos. ' +
+            'Di "/voice vc on" para reactivar.');
+        }
+      }catch(e){}
+      return;
+    }
+    _setState(VC.ERROR);
+    if(_active){
+      clearTimeout(_coolTimer);
+      _coolTimer = setTimeout(function(){
+        if(!_active) return;
+        _setState(VC.IDLE);
+        _enterListening();
+      }, POLICY.retryDelayMs);
+    }
+  }
+
+  // ── Sync reactivo con VoiceManager.onStateChange ──────────────────
+  // Escucha el estado de VM y actualiza el FSM de VC en consecuencia.
+  // Para backends OAI (sin conv mode nativo), el hook SPEAKING→IDLE/COOLDOWN
+  // dispara el re-inicio de escucha, cerrando el loop.
+  function _syncFromVM(vmState){
+    if(!_active) return;
+
+    switch(vmState){
+      case 'listening':
+        _setState(VC.LISTENING);
+        _errorCount = 0;   // reset en cada escucha exitosa
+        break;
+
+      case 'processing':
+        _setState(VC.PROCESSING);
+        break;
+
+      case 'speaking':
+        _setState(VC.SPEAKING);
+        break;
+
+      case 'cooldown':
+        // VoiceManager en conv mode ya se encarga del loop;
+        // para OAI (sin conv mode) necesitamos gestionarlo aquí
+        if(_backend() === 'oai'){
+          _enterCooldown();
+        } else {
+          _setState(VC.COOLDOWN);
+        }
+        break;
+
+      case 'idle':
+        // Si veníamos de SPEAKING y no estamos en conv mode → cooldown → re-listen
+        if((_prevVMState === 'speaking' || _prevVMState === 'cooldown') &&
+           _backend() === 'oai' && _state !== VC.COOLDOWN){
+          _enterCooldown();
+        } else if(_state === VC.PROCESSING || _state === VC.SPEAKING){
+          _enterCooldown();
+        } else if(_state === VC.COOLDOWN){
+          // ya gestionado por el timer
+        } else {
+          _setState(VC.IDLE);
+        }
+        break;
+
+      case 'error':
+        _onError();
+        break;
+    }
+
+    _prevVMState = vmState;
+  }
+
+  function _installVMListener(){
+    try{
+      if(window.VoiceManager && typeof VoiceManager.onStateChange === 'function'){
+        VoiceManager.onStateChange(_syncFromVM);
+        _log('VM.onStateChange listener instalado');
+      }
+    }catch(e){}
+  }
+
+  // ── buildSystemPrompt hook — identidad de voz ─────────────────────
+  // Cuando VC está activo, AURA sabe que tiene voz y deja de
+  // responder "solo soy texto" o "no tengo capacidad de voz".
+  function _installIdentityHook(){
+    var _prev = window.buildSystemPrompt || function(sys){ return sys; };
+    window.buildSystemPrompt = function(sys, mode){
+      var base = _prev.call(this, sys, mode);
+      if(!_active) return base;
+      var backend = _backend() || 'webspeech';
+      var backendLabel = { realtime:'Realtime WebSocket (PCM16, server VAD)',
+                           oai:'OpenAI TTS + Whisper STT',
+                           webspeech:'WebSpeech API nativa' }[backend] || backend;
+      return base +
+        '\n[VOZ ACTIVA: Sistema conversacional VoiceController activado.' +
+        ' Backend: ' + backendLabel + '.' +
+        ' Puedo escuchar, procesar y hablar en tiempo real.' +
+        ' No soy solo texto — tengo presencia auditiva.' +
+        ' Responde de forma natural, concisa y fluida para conversación oral.' +
+        ' Evita listas largas, markdown y explicaciones técnicas innecesarias.]';
+    };
+    _log('buildSystemPrompt identity hook instalado');
+  }
+
+  // ── Voice-activation router gate ─────────────────────────────────
+  // Frases que piden ACTIVAR el modo conversacional (no modificar código)
+  // Se interceptan ANTES del capability router para activación directa.
+  var VOICE_ACT_PAT = [
+    /\bten\s+voz\b/i,
+    /\bmodo\s+(?:conversaci[oó]n|voz|her|jarvis)\b/i,
+    /\bmode(?:lo)?\s+(?:conversaci[oó]n|voz|her|jarvis)\b/i,
+    /\bquiero\s+hablar\s+contigo\b/i,
+    /\bhazte\s+tipo\s+(?:her|jarvis)\b/i,
+    /\bact[ií]va(?:te)?\s+(?:la\s+)?(?:voz|modo\s+conversacional)\b/i,
+    /\bvoz\s+conversacional\b/i,
+    /\binicia\s+(?:el\s+)?modo\s+(?:voz|conversaci[oó]n|her|jarvis)\b/i,
+    /\bpon(?:te)?\s+en\s+modo\s+(?:voz|conversaci[oó]n|her|jarvis)\b/i
+  ];
+
+  function _isVoiceActivation(text){
+    return VOICE_ACT_PAT.some(function(p){ return p.test(text); });
+  }
+
+  function _makeVoiceProposal(text){
+    var AE = window.AuraEvolution;
+    if(!AE || typeof AE.propose !== 'function') return;
+
+    var backend = _backend() || 'webspeech';
+    var backendLabel = { realtime:'AuraRealtime (Realtime WS)',
+                         oai:'AuraOAIVoice (Whisper + OAI TTS)',
+                         webspeech:'VoiceManager WebSpeech' }[backend] || backend;
+
+    // Patch real: activación de runtime (no file write — trazabilidad en AE)
+    var patch = [
+      '// === ACTIVACIÓN VOICE CONTROLLER v1 ===',
+      '// Bloque: aura-voice-controller-v1 (build r26)',
+      '// Acción de runtime — no modifica el archivo en disco',
+      '//',
+      '// Activa el FSM conversacional y el backend detectado:',
+      '//   Backend actual: ' + backendLabel,
+      '//',
+      '(function(){',
+      '  if(window.VoiceController && !window.VoiceController.isActive()){',
+      '    window.VoiceController.startLoop();',
+      '  }',
+      '})();'
+    ].join('\n');
+
+    var id = AE.propose({
+      file:   'index.html',
+      patch:  patch,
+      reason: text.slice(0, 200),
+      author: 'user'
+    });
+
+    if(id === null || id === undefined) return;
+
+    // Activar inmediatamente en esta sesión
+    var activated = false;
+    var activationNote = '';
+    try{
+      startLoop();
+      activated = true;
+      activationNote = '\n\n**Modo conversacional activado ahora mismo.** Backend: ' +
+        backendLabel + '. Puedo escucharte — di algo para empezar.';
+    }catch(e){
+      activationNote = '\n\n**No se pudo activar automáticamente.** Escribe "/voice vc on" para intentarlo.';
+    }
+
+    // Mostrar descripción rica de la propuesta
+    var proposal = (AE._proposals || []).find(function(p){ return p.id === id; });
+    var msg = '';
+    if(typeof AE.describeProposal === 'function' && proposal){
+      msg = AE.describeProposal(proposal);
+    } else {
+      msg = '**Propuesta #' + id + '** — Activar modo conversacional de voz\n\n' +
+            'Patch: `VoiceController.startLoop()` (runtime)';
+    }
+    msg += activationNote;
+
+    if(typeof window.addMsg === 'function') window.addMsg('aura', msg);
+  }
+
+  function _installVoiceGate(){
+    if(window.__vcGateInstalled) return;
+    window.__vcGateInstalled = true;
+
+    var _inner = window.__auraProcessAuraInput;
+    if(typeof _inner !== 'function'){
+      _log('__auraProcessAuraInput no disponible — gate diferida');
+      window.__vcGateInstalled = false;
+      return;
+    }
+
+    window.__auraProcessAuraInput = function(txt, meta){
+      if(txt && _isVoiceActivation(String(txt))){
+        if(typeof window.addMsg === 'function') window.addMsg('user', txt);
+        _makeVoiceProposal(txt);
+        return Promise.resolve(true);
+      }
+      return _inner.apply(this, arguments);
+    };
+    // Mantener alias sincronizados
+    window.processAuraInput = window.__auraProcessAuraInput;
+    _log('voice activation gate instalada sobre __auraProcessAuraInput');
+  }
+
+  // ── /voice vc command extension ───────────────────────────────────
+  function _installVcCommand(){
+    var _origHandleCmd = window.handleCmd;
+    if(typeof _origHandleCmd !== 'function'){ _log('handleCmd no disponible'); return; }
+
+    window.handleCmd = function(cmd){
+      var m = /^\/voice\s+vc(?:\s+(on|off|toggle|once|status))?$/i.exec(String(cmd || ''));
+      if(m){
+        var action = (m[1] || 'toggle').toLowerCase();
+        switch(action){
+          case 'on':
+            startLoop();
+            try{ if(typeof window.addMsg==='function') window.addMsg('aura','Modo conversacional activado. Escuchando...'); }catch(e){}
+            break;
+          case 'off':
+            stopLoop();
+            try{ if(typeof window.addMsg==='function') window.addMsg('aura','Modo conversacional detenido.'); }catch(e){}
+            break;
+          case 'toggle':
+            toggleLoop();
+            break;
+          case 'once':
+            try{
+              if(window.VoiceManager) VoiceManager.startPunctualMic();
+            }catch(e){}
+            break;
+          case 'status':
+            try{
+              if(typeof window.addMsg==='function'){
+                window.addMsg('aura',
+                  'VoiceController · estado: **' + _state + '**' +
+                  ' | activo: ' + (_active ? 'sí' : 'no') +
+                  ' | backend: ' + (_backend() || 'ninguno') +
+                  ' | errores consecutivos: ' + _errorCount
+                );
+              }
+            }catch(e){}
+            break;
+        }
+        return;
+      }
+      _origHandleCmd.apply(this, arguments);
+    };
+    _log('/voice vc command extension instalada');
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────
+  function _init(){
+    _installVMListener();
+    _installIdentityHook();
+    _installVoiceGate();
+    _installVcCommand();
+    _log('instalado · VoiceController.startLoop() o /voice vc on para activar');
+  }
+
+  // ── Public API ────────────────────────────────────────────────────
+  window.VoiceController = {
+    _installed:    true,
+    VERSION:       'v1.0-r26',
+    startLoop:     startLoop,
+    stopLoop:      stopLoop,
+    toggleLoop:    toggleLoop,
+    getState:      function(){ return _state; },
+    isActive:      function(){ return _active; },
+    onStateChange: function(fn){ if(typeof fn==='function') _listeners.push(fn); },
+    STATES:        VC,
+    policy:        POLICY
+  };
+
+  // Init diferida para garantizar que VoiceManager y handleCmd estén listos
+  if(document.readyState === 'complete'){
+    setTimeout(_init, 0);
+  } else {
+    window.addEventListener('load', function(){ setTimeout(_init, 0); }, { once:true });
+  }
+
+  console.log('[VoiceController v1.0-r26] bloque cargado — init tras window.load');
 })();
 </script>
 
