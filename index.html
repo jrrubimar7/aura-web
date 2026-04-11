@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r9-hotfix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r9-hotfix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r9-hotfix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r10-hotfix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r10-hotfix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r10-hotfix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r9-hotfix";var VERSION="vIndexASv5.5.4-r9-hotfix";</script>
+<script>var BUILD="IndexASv5.5.4-r10-hotfix";var VERSION="vIndexASv5.5.4-r10-hotfix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -9703,10 +9703,11 @@ var VoiceManager = (function() {
       _killMic('punctual');
       _setMicUI(false);
     }
-    _unlockAudio();
-    // Fix 4.6: forzar resume del AudioContext antes de abrir el recognizer
-    // En Android Chrome, el contexto de audio puede estar suspendido después de inactividad
-    try{ var _s = synth(); if(_s){ _s.cancel(); _s.resume(); } }catch(e){}
+    // r10: cancelar TTS primero, luego unlock, luego _startRec() síncronamente
+    // _waitForSynthSilence + setTimeout sacaba r.start() del contexto de gesto de usuario
+    // (iOS Safari y algunas versiones de Android Chrome lo silencian por eso)
+    try{ var _s = synth(); if(_s){ _s.cancel(); } }catch(e){}
+    _unlockAudio(); // resume AudioContext + utterance vacío volumen 0 para desbloquear
     _muted = false;
     _convMode = true;
     _errorCount = 0;
@@ -9717,8 +9718,7 @@ var VoiceManager = (function() {
     _requestWakeLock();
     _renderUI();
     if(typeof sig === 'function') sig('[◈] Conversación activa','rgba(0,212,255,.6)');
-    // Fix 4.6: delay de 250ms para que el AudioContext se estabilice tras resume()
-    _waitForSynthSilence(function(){ setTimeout(function(){ _startRec(); }, 250); }, 10);
+    _startRec(); // síncrono — r.start() dentro del contexto del click del usuario
   }
 
   function stopConversation(){
