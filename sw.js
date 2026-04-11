@@ -1,7 +1,7 @@
-// AURA ∞.Ω — Service Worker (rebuild-safe v3)
-// Objetivo: evitar HTML viejo, limpiar caches previas y cachear solo estáticos seguros.
+// AURA ∞.Ω — Service Worker (anti-zombie r31)
+// Estrategia: HTML siempre network-first + caché solo para estáticos seguros
 
-var CACHE = 'aura-static-v3';
+var CACHE = 'aura-static-v4';
 var STATIC_ASSETS = [
   '/icon-192.png',
   '/icon-512.png',
@@ -58,36 +58,43 @@ self.addEventListener('fetch', function (event) {
 
   var url = new URL(event.request.url);
   var isSameOrigin = url.origin === self.location.origin;
-  var isHTML = event.request.mode === 'navigate' ||
-               (event.request.headers.get('accept') || '').includes('text/html') ||
-               url.pathname.endsWith('.html');
 
-  // Nunca cachear APIs externas
+  var isHTML =
+    event.request.mode === 'navigate' ||
+    (event.request.headers.get('accept') || '').includes('text/html') ||
+    url.pathname.endsWith('.html');
+
+  // NO interceptar APIs externas
   if (
     url.href.includes('api.anthropic.com') ||
     url.href.includes('generativelanguage.googleapis.com') ||
     url.href.includes('api.groq.com') ||
     url.href.includes('api.x.ai') ||
     url.href.includes('openrouter.ai') ||
-    url.href.includes('allorigins')
+    url.href.includes('allorigins') ||
+    url.href.includes('api.openai.com')
   ) {
     return;
   }
 
-  // Nunca cachear HTML: siempre red
+  // HTML → SIEMPRE red (anti-zombie real)
   if (isHTML) {
     event.respondWith(
-      fetch(event.request, { cache: 'no-store' }).catch(function () {
-        return new Response(
-          '<!doctype html><html><head><meta charset="utf-8"><title>AURA offline</title></head><body style="font-family:sans-serif;padding:20px;background:#f8f9fb;color:#111827;">AURA no pudo cargar esta página sin conexión.</body></html>',
-          { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-        );
-      })
+      fetch(event.request, { cache: 'no-store' })
+        .then(function (res) {
+          return res;
+        })
+        .catch(function () {
+          return new Response(
+            '<!doctype html><html><head><meta charset="utf-8"><title>AURA offline</title></head><body style="font-family:sans-serif;padding:20px;background:#f8f9fb;color:#111827;">AURA no pudo cargar esta página sin conexión.</body></html>',
+            { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          );
+        })
     );
     return;
   }
 
-  // Solo cachear estáticos seguros del mismo origen
+  // SOLO estáticos seguros
   var isStatic =
     isSameOrigin &&
     (
@@ -110,6 +117,7 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
+  // Cache-first SOLO para estáticos
   event.respondWith(
     caches.match(event.request, { ignoreSearch: true }).then(function (cached) {
       if (cached) return cached;
