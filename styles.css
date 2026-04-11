@@ -1,3 +1,10 @@
+/*
+ * ARCHIVO LEGACY — NO CONECTADO AL RUNTIME ACTUAL
+ * Este CSS pertenece a un prototipo anterior de AURA.
+ * index.html no lo referencia. No modificar ni eliminar sin
+ * revisar el historial git. Ver docs/architecture.md.
+ */
+
 :root {
   --bg: #f7f8fb;
   --panel: #ffffff;

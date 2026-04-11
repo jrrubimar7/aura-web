@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r5-functional"/>
-<meta name="aura-build" content="IndexASv5.5.4-r5-functional"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r5-functional</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r6-hotfix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r6-hotfix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r6-hotfix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r5-functional";var VERSION="vIndexASv5.5.4-r5-functional";</script>
+<script>var BUILD="IndexASv5.5.4-r6-hotfix";var VERSION="vIndexASv5.5.4-r6-hotfix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -1083,10 +1083,20 @@ window.testAndroidSTTBridge = function(){
   // -- State -----------------------------------------------
   if(!window.S) window.S = {};
   if(!window.AuraState){
+    // Boot stub: incluye patch + snapshot para que ConversationManager y bloques
+    // posteriores no fallen si la implementación real no sustituye este stub.
+    // La implementación real (aura-memory-v1) usa || por lo que si este stub ya
+    // existe, no se reemplaza — este stub debe ser funcionalmente suficiente.
     window.AuraState = {
       _data: {},
       get: function(k){ return this._data[k]; },
-      set: function(k,v){ this._data[k]=v; }
+      set: function(k,v){ this._data[k]=v; return true; },
+      patch: function(obj){
+        var self = this;
+        Object.keys(obj || {}).forEach(function(k){ self._data[k] = obj[k]; });
+        return Object.assign({}, self._data);
+      },
+      snapshot: function(){ return Object.assign({}, this._data); }
     };
   }
 
@@ -5036,13 +5046,15 @@ function cmdEntorno(base,parts){
     return Promise.resolve(true);
   }
   if(base==='perfil'){
-    var p='[ PERFIL DE J ]\n\n';
+    // Fix: inicializar p vacío para que el fallback funcione cuando no hay datos.
+    // Antes p='[ PERFIL DE J ]\n\n' era siempre truthy aunque no hubiera contenido.
+    var p='';
     if(S.lt.summary)p+='Resumen: '+S.lt.summary+'\n\n';
     if(S.lt.facts&&S.lt.facts.length)p+='Hechos clave:\n'+S.lt.facts.map(function(f){return '\u25b8 '+f;}).join('\n');
     if(META_KERNEL.tensions&&META_KERNEL.tensions.length)
       p+='\n\nTensiones activas:\n'+META_KERNEL.tensions.slice(-5).map(function(t){
         return '\u25b8 ['+t.op+'] '+t.a+(t.b?' / '+t.b:'');}).join('\n');
-    addMsg('aura',p||'Sin perfil acumulado aún. Conversa más con AURA.');
+    addMsg('aura',p?'[ PERFIL DE J ]\n\n'+p:'Sin perfil acumulado aún. Conversa más con AURA.');
     return Promise.resolve(true);
   }
   if(base==='inter'||base==='consulta'){
@@ -5420,7 +5432,7 @@ function handleCmd(cmd){
           var pd=CRYPTO.allPairs.find(function(a){return a.pair===p;});
       return '▸ '+p+'/USDT: $'+(pd?pd.price:0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6})+' ('+(pd?pd.change:0).toFixed(2)+'%)';
         }).join('\n')}], 0.5
-      ).then(function(r){removeTyping(tid_s);S.busy=false;addMsg('aura',r,_pak);speak(r.slice(0,200));})
+      ).then(function(r){removeTyping(tid_s);S.busy=false;addMsg('aura',r,S.agent);speak(r.slice(0,200));})
        .catch(function(e){removeTyping(tid_s);S.busy=false;addMsg('aura','Error: '+e.message);});
       return true;
     }
