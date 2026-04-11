@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r24-capability-propose"/>
-<meta name="aura-build" content="IndexASv5.5.4-r24-capability-propose"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r24-capability-propose</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r24b-router-fix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r24b-router-fix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r24b-router-fix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r24-capability-propose";var VERSION="vIndexASv5.5.4-r24-capability-propose";</script>
+<script>var BUILD="IndexASv5.5.4-r24b-router-fix";var VERSION="vIndexASv5.5.4-r24b-router-fix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -16304,13 +16304,20 @@ window.forceEnterAura = function(ev){
     }
 
     // ── Clasificación: ACCIONAL vs INFORMATIVA ──────────────────────
-    // ACCIONAL → imperativo / petición de cambio → generar propuesta
-    // INFORMATIVA → pregunta sobre capacidad     → explicar
+    // Regla: intención de cambio > forma interrogativa.
+    // Una pregunta CON verbo de acción claro sobre AURA → ACCIONAL.
+    // Una pregunta sobre capacidad/funcionamiento     → INFORMATIVA.
+    //
+    // Evaluación: INFORM primero — SOLO bloquea formas verdaderamente
+    // informativas (cómo/qué/cuéntame/puedes-ver/reflexivos).
+    // Si INFORM no bloquea → ACTION decide.
     var ACTION_PAT = [
       // Imperativo español: verbo al inicio
       /^(arregl|cambi|modific|implement|cre[ae]\b|quit|añad|agreg|mejor|actualiz|corrig|refactor|reescrib|integr|activ|desactiv|configur|ajust|arml|ponl|sacal)/i,
-      // "puedes + verbo de acción" (no interrogativa pura)
-      /pu[ea]des\s+(arreglar|cambiar|modificar|implementar|corregir|mejorar|actualizar|crear|quitar|añadir|integrar)\b/i,
+      // Interrogativa accional: verbo conjugado 2ª persona (¿arreglas/cambias/...?)
+      /\b(arreglas|cambias|modificas|implementas|corriges|mejoras|actualizas|integras|activas|configuras|ajustas|añades|creas|quitas)\b/i,
+      // "puedes + verbo de CAMBIO específico" (≠ ver/mostrar/explicar/reflexivo)
+      /pu[ea]des\s+(arreglar|cambiar|modificar|implementar|corregir|mejorar|actualizar|crear|quitar|añadir|integrar|activar|configurar|ajustar)\b/i,
       // "quiero que / necesito que + verbo"
       /quiero que\s+(arregles|cambies|modifiques|implementes|corrijas|mejores|actualices|crees|quites|añadas|integres)/i,
       /necesit[ao]\s+(que\s+)?(arregl|cambi|modific|implement|corrij|mejor|actualic)/i,
@@ -16319,23 +16326,31 @@ window.forceEnterAura = function(ev){
       // "haz el cambio", "aplica el patch/parche"
       /h[aá]z(lo|la|me)?\s*(el\s+)?cambi/i,
       /aplic(a|ar)\s*(el\s+)?(cambi|parche|patch)\b/i,
-      // English imperatives
+      // "lo probamos" / "hacemos la prueba" (ya está en CAP, refuerzo aquí)
+      /\blo probamos\b/i, /\bhacemos la prueba\b/i,
+      // English: imperativo + "can you + change verb"
       /^(fix|change|modif|implement|creat|remov|add\s|improv|updat|correct|refactor|enabl|disabl|set\s)/i,
+      /can you\s+(fix|change|modify|implement|improve|update|enable|disable|configure|correct)\b/i,
     ];
 
+    // INFORM_PAT: SOLO bloquea formas donde la intención es claramente
+    // informativa — NO incluye [¿?] genérico.
+    // "puedes ver/explicar/editarte" = capacidad reflexiva → informativa.
+    // "puedes modificar/arreglar" = verbo de cambio → NO bloqueado aquí.
     var INFORM_PAT = [
-      /[¿?]/,                                     // cualquier signo de pregunta
-      /^(cómo|c[oó]mo)\b/i,                       // "cómo funciona..."
-      /^(qu[eé]|para\s+qu[eé])\b/i,               // "qué es...", "para qué..."
-      /^(cuéntame|explí[ck]ame|dime|háblame)\b/i, // verbos informativos
-      /tienes\s+(la\s+)?capacidad/i,              // "¿tienes capacidad de...?"
-      /^(eres\s+capaz|puedes\s+(ver|explicar|decirme|mostrarme|contarme))/i,
+      /^(cómo|c[oó]mo)\b/i,                              // "cómo funciona..."
+      /^(qu[eé]|cuál|cuáles|para\s+qu[eé])\b/i,           // "qué es...", "cuáles son..."
+      /^(cuéntame|explí[ck]ame|dime\s+(cómo|qu[eé])|háblame\s+de)\b/i,
+      /tienes\s+(la\s+)?capacidad/i,                     // "tienes capacidad de..."
+      // "puedes" + verbo SOLO informativo/perceptivo/reflexivo — NO de cambio
+      /pu[ea]des\s+(ver\b|mostr\b|decir(me)?\b|contarme\b|explic\b|edit(ar)?te\b|modific(ar)?te\b|cambi(ar)?te\b|verte\b|auto.?edit)/i,
     ];
 
     function _isActionable(text){
       var t = (text || '').trim();
-      // Preguntas explícitas → NUNCA accional
+      // INFORM evalúa primero — solo bloquea formas verdaderamente informativas
       if(INFORM_PAT.some(function(p){ return p.test(t); })) return false;
+      // ACTION decide si hay verbo de cambio, sea imperativo o interrogativo
       return ACTION_PAT.some(function(p){ return p.test(t); });
     }
 
