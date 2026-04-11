@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r30-cognition-fix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r30-cognition-fix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r30-cognition-fix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r31-gemini-routing"/>
+<meta name="aura-build" content="IndexASv5.5.4-r31-gemini-routing"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r31-gemini-routing</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r30-cognition-fix";var VERSION="vIndexASv5.5.4-r30-cognition-fix";</script>
+<script>var BUILD="IndexASv5.5.4-r31-gemini-routing";var VERSION="vIndexASv5.5.4-r31-gemini-routing";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -2066,19 +2066,29 @@ async function callGemini(sys, msgs, temp){
     });
     if(!r.ok) throw new Error('HTTP '+r.status);
   }catch(fetchErr){
+    console.warn('[Gemini] proxy falló ('+fetchErr.message+') → intentando API directa');
     if(url===primaryUrl){
       url = fallbackUrl;
-      r = await fetch(url,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({contents:contents,generationConfig:{temperature:temp||0.7,maxOutputTokens:1500}})
-      });
+      try{
+        r = await fetch(url,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({contents:contents,generationConfig:{temperature:temp||0.7,maxOutputTokens:1500}})
+        });
+        if(!r.ok) throw new Error('HTTP '+r.status);
+      }catch(fbErr){
+        console.warn('[Gemini] fallback directo también falló ('+fbErr.message+')');
+        throw fbErr;
+      }
     } else {
       throw fetchErr;
     }
   }
   var d = await r.json();
-  if(d.error) throw new Error('Gemini: '+d.error.message);
+  if(d.error){
+    console.warn('[Gemini] API error:', d.error.message);
+    throw new Error('Gemini: '+d.error.message);
+  }
   var text = d.candidates&&d.candidates[0]&&d.candidates[0].content&&
     d.candidates[0].content.parts&&d.candidates[0].content.parts[0]&&
     d.candidates[0].content.parts[0].text||'';
@@ -2232,8 +2242,17 @@ async function apiCallLegacy(sys, msgs, temp){
   }
 
   if(!result){
-    result = await callGroq(sys,msgs,temp);
-    provider='groq';
+    // r31: solo ir a callGroq() si hay key compatible (Groq/OR/Together).
+    // Si solo hay Gemini y ya falló → error informativo, no "añade Groq key".
+    var hasGroqPath = (S.key && S.key.startsWith('gsk_')) || (S.orKey && S.orKey.length > 10) || (S.togetherKey && S.togetherKey.length > 30);
+    if(hasGroqPath){
+      result = await callGroq(sys,msgs,temp);
+      provider='groq';
+    } else if(S.geminiKey && S.geminiKey.startsWith('AIza')){
+      throw new Error('Gemini no respondió (proxy o cuota). Verifica tu key AIza… o añade una key Groq/OpenRouter como alternativa.');
+    } else {
+      throw new Error('Sin API key configurada. Toca KEY y añade Gemini (AIza…) o Groq (gsk_…).');
+    }
   }
 
   var _elapsed = Date.now()-t0;
@@ -3719,7 +3738,13 @@ function updateEnv(){
   var months=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   var dateStr=days[now.getDay()]+' '+now.getDate()+' '+months[now.getMonth()];
   var agLabel=(S.agents&&S.agents[S.agent])?S.agents[S.agent].label:S.agent||'general';
-  var keyStatus=S.key?'KEY·OK':'SIN KEY';
+  // r31: mostrar qué provider está activo, no solo si hay Groq
+  var _activeProvider = S.key&&S.key.startsWith('gsk_') ? 'GROQ·OK'
+    : S.geminiKey&&S.geminiKey.startsWith('AIza') ? 'GEMINI·OK'
+    : S.claudeKey&&S.claudeKey.length>20 ? 'CLAUDE·OK'
+    : S.orKey&&S.orKey.length>10 ? 'OR·OK'
+    : 'SIN KEY';
+  var keyStatus=_activeProvider;
   var focusStr=S.focus?'·FOCUS':'';
   var proStr=(S.proactive===false)?'':'·PRO';
   var msgsStr=S.msgs?S.msgs+'msg':'0msg';
