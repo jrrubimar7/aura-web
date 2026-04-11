@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r15-phase4"/>
-<meta name="aura-build" content="IndexASv5.5.4-r15-phase4"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r15-phase4</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r16-phase5"/>
+<meta name="aura-build" content="IndexASv5.5.4-r16-phase5"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r16-phase5</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r15-phase4";var VERSION="vIndexASv5.5.4-r15-phase4";</script>
+<script>var BUILD="IndexASv5.5.4-r16-phase5";var VERSION="vIndexASv5.5.4-r16-phase5";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -9964,6 +9964,17 @@ window._jarvisToggle = window.jarvisToggle;
         });
         lines.push('');
         lines.push('Obs: '+window.AuraMeta._log.length+' | Anomalías: '+window.AuraMeta.anomalies().length);
+        var decisions=window.AuraMeta.recentDecisions?window.AuraMeta.recentDecisions(5):[];
+        if(decisions.length){
+          lines.push('');
+          lines.push('Decisiones gate (últimas '+decisions.length+'):');
+          decisions.forEach(function(d){
+            var age=Math.round((Date.now()-d.ts)/1000);
+            lines.push('  ['+d.decision.toUpperCase()+'] '+d.source+' — '+d.reason+' ('+age+'s)');
+          });
+        } else {
+          lines.push('Gate: sin decisiones registradas');
+        }
         if(typeof addMsg==='function') addMsg('aura',lines.join('\n'));
       }catch(e){
         if(typeof addMsg==='function') addMsg('aura','[AuraMeta] error: '+e.message);
@@ -15091,16 +15102,63 @@ window.forceEnterAura = function(ev){
       return Math.max(0, Math.min(1, conf));
     },
 
-    // Decisión booleana
+    // Decisión booleana (retro-compatible)
     shouldAct(bit){
       return bit.coherence   >  this.thresholds.coherence &&
              bit.uncertainty <  this.thresholds.uncertainty &&
              bit.amplitude   >= this.thresholds.amplitude;
     },
 
-    // Configurar thresholds en runtime
     configure(patch){
       Object.assign(this.thresholds, patch);
+    },
+
+    // ── evaluate() — decisión rica con 3 salidas ─────────────────
+    // Devuelve { decision:'allow'|'degrade'|'block', reason, score }
+    // Esta función es la autoridad central de la nueva capa.
+    evaluate(ctx){
+      ctx = ctx || {};
+      var IS = window.InfiniState;
+      var MA = window.AuraMeta;
+      if(!IS || !MA) return { decision:'allow', reason:'infinibit-not-ready', score:1 };
+
+      var snap   = IS.snapshot();
+      var diag   = MA.diagnose();
+      var issues = diag.issues || [];
+      var score  = this.collapse(snap.thinking);
+
+      // ── BLOCK — solo incoherencias genuinamente graves ───────────
+      // 1. busy_stuck muy prolongado (>60s) + coherencia muy baja
+      var stuck60 = issues.find(function(i){ return i.type==='busy_stuck' && i.elapsed>60000; });
+      if(stuck60 && score < 0.15){
+        return { decision:'block', reason:'busy_stuck:'+Math.round(stuck60.elapsed/1000)+'s+score='+score.toFixed(2), score:score };
+      }
+      // 2. Colisión real de pipeline reciente (< 2s) + baja coherencia
+      var lastAnomaly = MA.anomalies().slice(-1)[0];
+      var recentColl  = lastAnomaly && lastAnomaly.errors &&
+        lastAnomaly.errors[0] && lastAnomaly.errors[0].indexOf('colisión real')>=0 &&
+        (Date.now()-lastAnomaly.ts) < 2000;
+      if(recentColl && score < 0.25){
+        return { decision:'block', reason:'pipeline_collision+score='+score.toFixed(2), score:score };
+      }
+
+      // ── DEGRADE — condiciones medias ──────────────────────────────
+      if(issues.find(function(i){ return i.type==='lock_held'; })){
+        return { decision:'degrade', reason:'lock_held', score:score };
+      }
+      if(snap.thinking.uncertainty > 0.7){
+        return { decision:'degrade', reason:'uncertainty='+snap.thinking.uncertainty.toFixed(2), score:score };
+      }
+      var stuck = issues.find(function(i){ return i.type==='busy_stuck'; });
+      if(stuck){
+        return { decision:'degrade', reason:'busy_stuck_recoverable:'+Math.round(stuck.elapsed/1000)+'s', score:score };
+      }
+      if(issues.find(function(i){ return i.type==='error_spike'; })){
+        return { decision:'degrade', reason:'error_spike', score:score };
+      }
+
+      // ── ALLOW ─────────────────────────────────────────────────────
+      return { decision:'allow', reason:'coherente', score:score };
     }
   };
 
@@ -15181,6 +15239,21 @@ window.forceEnterAura = function(ev){
     tail(n){
       n = n || 20;
       return this._log.slice(-n);
+    },
+
+    // ── Registro de decisiones del gate ──────────────────────────
+    _decisions:    [],
+    _maxDecisions: 50,
+
+    logDecision(ev){
+      ev.ts = ev.ts || Date.now();
+      this._decisions.push(ev);
+      if(this._decisions.length > this._maxDecisions) this._decisions.shift();
+    },
+
+    recentDecisions(n){
+      n = n || 10;
+      return this._decisions.slice(-n);
     }
   };
 
@@ -15339,88 +15412,111 @@ window.forceEnterAura = function(ev){
   })();
 
   // ─────────────────────────────────────────────────────────────────
-  // Gate — InfiniBit como autoridad real sobre __auraProcessAuraInput
-  // Fase 4: de observación → control parcial
+  // _autoRecover — helper compartido entre gates
   // ─────────────────────────────────────────────────────────────────
-  // __auraProcessAuraInput NO está congelado por aura-final-certification-v14.
-  // Se puede wrappear aquí de forma segura.
-  (function _gate(){
+  function _autoRecover(tag){
+    try{
+      if(window.AuraState && typeof window.AuraState.set === 'function') window.AuraState.set('busy', false);
+      if(window.S) window.S.busy = false;
+      if(typeof window.removeTyping === 'function') window.removeTyping();
+      try{ if(window.AuraLock && typeof window.AuraLock.release === 'function') window.AuraLock.release(tag||'InfiniBitGate'); }catch(_e){}
+      if(window.InfiniState) window.InfiniState.update('thinking', { amplitude:0.15, coherence:0.85, uncertainty:0.2, mode:'contextual' });
+      window.__auraBusySince = null;
+      try{ if(typeof window.toast === 'function') window.toast('⟳ AURA recuperada'); }catch(e){}
+    }catch(e){}
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Gate A — __auraProcessAuraInput (pipeline de mensajes)
+  // Fase 4-5: autoridad real sobre el entry point de procesamiento
+  // __auraProcessAuraInput no está congelado por aura-final-certification.
+  // ─────────────────────────────────────────────────────────────────
+  (function _gateProcessInput(){
     var _orig = window.__auraProcessAuraInput;
     if(typeof _orig !== 'function'){
-      console.warn('[InfiniBit gate] __auraProcessAuraInput no encontrado — gate no instalado');
+      console.warn('[InfiniBit gateA] __auraProcessAuraInput no encontrado');
       return;
     }
 
     window.__auraProcessAuraInput = function(text, meta){
       try{
-        if(window.AuraMeta && window.InfiniState && window.CollapseEngine){
-          var IS  = window.InfiniState;
-          var CE  = window.CollapseEngine;
-          var MA  = window.AuraMeta;
+        if(window.CollapseEngine && window.AuraMeta && window.InfiniState){
+          var ev = window.CollapseEngine.evaluate({ source:'processInput' });
 
-          // --- GATE 1: busy_stuck + incoherencia → auto-recuperación ---
-          // CollapseEngine evalúa el estado actual de thinking.
-          // Si el score es bajo (sistema incoherente) Y hay busy_stuck,
-          // InfiniBit interviene: libera locks y limpia el estado antes
-          // de permitir el nuevo input.
-          var diag = MA.diagnose();
-          var stuckIssue = diag.issues.find(function(i){ return i.type === 'busy_stuck'; });
-          var thinkingScore = CE.collapse(IS.thinking);
+          if(ev.decision !== 'allow'){
+            window.AuraMeta.logDecision({ decision:ev.decision, reason:ev.reason, score:ev.score, source:'processInput' });
 
-          if(stuckIssue && thinkingScore < 0.3){
-            // InfiniBit detecta sistema atascado con baja coherencia.
-            // Acción: auto-recuperación antes de procesar el nuevo input.
-            console.warn('[InfiniBit gate] busy_stuck + incoherencia (score=' + thinkingScore.toFixed(2) + ') — auto-recuperando');
-            try{
-              if(window.AuraState && typeof window.AuraState.set === 'function'){
-                window.AuraState.set('busy', false);
-              }
-              if(window.S) window.S.busy = false;
-              if(typeof window.removeTyping === 'function') window.removeTyping();
-              // Intentar liberar AuraLock si está bloqueado
-              try{
-                if(window.AuraLock && typeof window.AuraLock.release === 'function'){
-                  window.AuraLock.release('InfiniBitGate');
-                }
-              }catch(_e){}
-            }catch(e){}
-
-            IS.update('thinking', { amplitude:0.15, coherence:0.85, uncertainty:0.2, mode:'contextual' });
-            window.__auraBusySince = null;
-
-            MA.observe({
-              state:       IS.snapshot(),
-              errors:      [],
-              performance: { gate:'auto-recovery', elapsed:stuckIssue.elapsed, thinkingScore:thinkingScore }
-            });
-
-            // Toast solo si disponible
-            try{ if(typeof window.toast === 'function') window.toast('⟳ AURA recuperada'); }catch(e){}
-          }
-
-          // --- GATE 2: uncertainty extrema → registrar degradación ---
-          // No bloquea (el usuario necesita respuesta), pero lo registra.
-          if(IS.thinking.uncertainty > 0.85){
-            MA.observe({
-              state:  IS.snapshot(),
-              errors: ['gate:alta-incertidumbre:' + IS.thinking.uncertainty.toFixed(2)]
-            });
+            if(ev.decision === 'block'){
+              // Block → auto-recuperar y luego dejar pasar
+              // (no se suprime el mensaje del usuario — se sana el sistema primero)
+              console.warn('[InfiniBit gateA] BLOCK →', ev.reason, '— auto-recuperando');
+              _autoRecover('gateA');
+            } else {
+              // Degrade → procesar con registro
+              console.warn('[InfiniBit gateA] DEGRADE →', ev.reason);
+            }
           }
         }
       }catch(e){
-        // El gate NUNCA debe romper el pipeline
-        console.error('[InfiniBit gate] excepción interna (ignorada):', e);
+        // Gate nunca rompe el pipeline
       }
-
-      // Siempre ejecutar el pipeline original
       return _orig.apply(this, arguments);
     };
 
-    // Sincronizar alias (processAuraInput apunta al mismo fn)
     window.processAuraInput = window.__auraProcessAuraInput;
-    window.__auraProcessAuraInput.__infinibitGated = true;
+    window.__auraProcessAuraInput.__infinibitGated = 'gateA-v5';
+    console.log('[InfiniBit gateA] activo sobre __auraProcessAuraInput');
+  })();
 
-    console.log('[InfiniBit gate] instalado sobre __auraProcessAuraInput');
+  // ─────────────────────────────────────────────────────────────────
+  // Gate B — window.handleCmd (comandos slash)
+  // Fase 5: autoridad sobre /sintetiza, /buscar, /omega y similares.
+  // Comandos de diagnóstico/utilidad están siempre en lista blanca.
+  // window.handleCmd no está congelado.
+  // ─────────────────────────────────────────────────────────────────
+  (function _gateHandleCmd(){
+    var _orig = window.handleCmd || window._handleCmd;
+    if(typeof _orig !== 'function'){
+      console.warn('[InfiniBit gateB] handleCmd no encontrado');
+      return;
+    }
+
+    // Comandos siempre permitidos — diagnóstico, control, utilidades cortas
+    var SAFE = { meta:1, voice:1, vm:1, voz:1, limpiar:1, hora:1,
+                 mute:1, unmute:1, timer:1, rollback:1, perfil:1, marcadores:1 };
+
+    window.handleCmd = function(cmd){
+      var base = (cmd||'').slice(1).split(' ')[0].toLowerCase();
+
+      // Blanca → pasar siempre
+      if(SAFE[base]) return _orig.apply(this, arguments);
+
+      try{
+        if(window.CollapseEngine && window.AuraMeta){
+          var ev = window.CollapseEngine.evaluate({ source:'handleCmd', cmd:base });
+
+          if(ev.decision !== 'allow'){
+            window.AuraMeta.logDecision({ decision:ev.decision, reason:ev.reason, score:ev.score, source:'handleCmd:'+base });
+
+            if(ev.decision === 'block'){
+              console.warn('[InfiniBit gateB] BLOCK cmd='+base+' →', ev.reason, '— recuperando');
+              _autoRecover('gateB');
+            } else {
+              // Degrade: procesar pero dejar registro en AuraMeta
+              console.warn('[InfiniBit gateB] DEGRADE cmd='+base+' →', ev.reason);
+            }
+          }
+        }
+      }catch(e){
+        // Gate nunca rompe handleCmd
+      }
+
+      return _orig.apply(this, arguments);
+    };
+
+    window._handleCmd = window.handleCmd;
+    window.handleCmd.__infinibitGated = 'gateB-v5';
+    console.log('[InfiniBit gateB] activo sobre handleCmd');
   })();
 
   // ─────────────────────────────────────────────────────────────────
@@ -15428,14 +15524,22 @@ window.forceEnterAura = function(ev){
   // ─────────────────────────────────────────────────────────────────
   window.AuraKernel = window.AuraKernel || {};
   window.AuraKernel.infinibit = {
-    version:  'v1.4',
+    version:  'v1.5',
     enabled:  true,
     modules:  ['InfiniBit','InfiniState','CollapseEngine','AuraMeta','AuraEvolution'],
-    gated:    typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__infinibitGated,
-    status:   function(){ return window.AuraMeta.diagnose(); }
+    gates:    {
+      processInput: typeof window.__auraProcessAuraInput === 'function' && !!window.__auraProcessAuraInput.__infinibitGated,
+      handleCmd:    typeof window.handleCmd === 'function' && !!window.handleCmd.__infinibitGated
+    },
+    status:   function(){
+      var d = window.AuraMeta.diagnose();
+      d.gates     = window.AuraKernel.infinibit.gates;
+      d.decisions = window.AuraMeta.recentDecisions(5);
+      return d;
+    }
   };
 
-  console.log('[InfiniBit v1.4] online — gate activo:', !!window.__auraProcessAuraInput.__infinibitGated);
+  console.log('[InfiniBit v1.5] gates activos — processInput:', !!window.__auraProcessAuraInput.__infinibitGated, '| handleCmd:', !!window.handleCmd.__infinibitGated);
 })();
 </script>
 
