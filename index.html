@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r20-capability-router"/>
-<meta name="aura-build" content="IndexASv5.5.4-r20-capability-router"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r20-capability-router</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r21-trading"/>
+<meta name="aura-build" content="IndexASv5.5.4-r21-trading"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r21-trading</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r20-capability-router";var VERSION="vIndexASv5.5.4-r20-capability-router";</script>
+<script>var BUILD="IndexASv5.5.4-r21-trading";var VERSION="vIndexASv5.5.4-r21-trading";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -10015,6 +10015,14 @@ window._jarvisToggle = window.jarvisToggle;
             }
           }
         }catch(e){}
+        // Trading signals
+        try{
+          var at=window.AuraTrading;
+          if(at && typeof at.metaInfo==='function'){
+            var tInfo=at.metaInfo();
+            if(tInfo) lines.push('  [◈] Trading: '+tInfo);
+          }
+        }catch(e){}
         lines.push('');
 
         // ── C. GATE — decisiones recientes ───────────────────────
@@ -16350,6 +16358,371 @@ window.forceEnterAura = function(ev){
     '| capabilityRouter:', !!window.__auraProcessAuraInput.__capabilityRouted,
     '| cmds:', !!window.handleCmd.__infinibitGated,
     '| voz:', !!(window.VoiceManager && window.VoiceManager.toggleConversation.__infinibitGated));
+})();
+</script>
+
+
+<script id="aura-trading-v1">
+// ═══════════════════════════════════════════════════════════════════
+// AuraTrading v1.0 — trading supervisado, NO-AGÉNTICO TOTAL
+// Fase 1: análisis real (Binance klines), señales estructuradas,
+//         notificaciones, historial, monitor periódico.
+// NO ejecución. NO órdenes reales. NO movimiento de capital.
+// ═══════════════════════════════════════════════════════════════════
+(function(){
+  if(window.AuraTrading && window.AuraTrading._installed) return;
+
+  // ── Dominio AuraAgenticity 'trading' ─────────────────────────────
+  (function(){
+    var AA = window.AuraAgenticity;
+    if(AA && typeof AA.registerDomain==='function' && !(AA._domains && AA._domains['trading'])){
+      AA.registerDomain('trading', {
+        mode:'non-agentic-total', intervention:0.05, autonomy:0.0,
+        supervisionRequired:1.0, reversibility:1.0, executionPermission:0.0, partiality:0.0,
+        note:'Trading supervisado v1 — análisis + señales + notificaciones. CERO ejecución.'
+      });
+      console.log('[AuraTrading] dominio "trading" registrado — ep=0.0 sv=1.0');
+    }
+  })();
+
+  // ── Utilidades ────────────────────────────────────────────────────
+  var _uid = 0;
+  function _id(){ return 'sig_'+Date.now()+'_'+(++_uid); }
+
+  function _fPrice(n){
+    if(typeof n!=='number') return '?';
+    if(n>=1000) return n.toLocaleString('en-US',{maximumFractionDigits:2});
+    if(n>=1)    return n.toFixed(4);
+    return n.toFixed(8);
+  }
+
+  // ── Fuente de datos: Binance klines REST (público, sin auth) ──────
+  // https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=50
+  // Retorna OHLCV real. Sin datos: retorna null — sin humo ni simulación.
+  async function _fetchKlines(pair, interval){
+    var url='https://api.binance.com/api/v3/klines?symbol='+pair+'USDT&interval='+interval+'&limit=50';
+    var resp = await fetch(url,{mode:'cors'});
+    if(!resp.ok) throw new Error('Binance klines HTTP '+resp.status);
+    var raw = await resp.json();
+    if(!Array.isArray(raw)||raw.length<21) throw new Error('datos insuficientes ('+( raw?raw.length:0)+' velas)');
+    return raw.map(function(k){
+      return {o:parseFloat(k[1]),h:parseFloat(k[2]),l:parseFloat(k[3]),c:parseFloat(k[4]),v:parseFloat(k[5])};
+    });
+  }
+
+  // ── Indicadores técnicos (datos reales de klines) ─────────────────
+  function _sma(arr,n){ return arr.slice(-n).reduce(function(a,b){return a+b;},0)/n; }
+
+  function _indicators(cc){
+    var n=cc.length; if(n<21) return null;
+    var cls=cc.map(function(c){return c.c;}), vols=cc.map(function(c){return c.v;});
+    var last=cls[n-1], sma10=_sma(cls,10), sma20=_sma(cls,20);
+    var mom10=(last-cls[n-11])/cls[n-11]*100;
+    var atr14=cc.slice(-14).reduce(function(s,c){return s+(c.h-c.l);},0)/14;
+    var atrPct=atr14/last*100;
+    var volAvg=_sma(vols,20), volRatio=vols[n-1]/(volAvg||1);
+    var gains=0,losses=0;
+    for(var i=n-14;i<n;i++){ var d=cls[i]-cls[i-1]; if(d>0) gains+=d; else losses-=d; }
+    var rsi=losses===0?100:100-(100/(1+gains/losses));
+    return {last:last,sma10:sma10,sma20:sma20,mom10:mom10,atrPct:atrPct,volRatio:volRatio,rsi:rsi,trendUp:sma10>sma20};
+  }
+
+  // ── Clasificador de señal ─────────────────────────────────────────
+  // Combina 4 indicadores → score 0..1. Umbral mínimo: 0.45.
+  function _classify(ind){
+    if(!ind) return null;
+    var score=0, side=null, reasons=[];
+
+    if(ind.trendUp){ side='LONG';  score+=0.25; reasons.push('SMA10>SMA20'); }
+    else            { side='SHORT'; score+=0.25; reasons.push('SMA10<SMA20'); }
+
+    if(side==='LONG'  && ind.mom10> 0.3){ score+=0.20; reasons.push('mom +'+ind.mom10.toFixed(2)+'%'); }
+    else if(side==='SHORT'&& ind.mom10<-0.3){ score+=0.20; reasons.push('mom '+ind.mom10.toFixed(2)+'%'); }
+    else{ score-=0.10; }
+
+    if(ind.rsi<30)       { side='LONG';  score+=0.30; reasons.push('RSI sobrevendido '+ind.rsi.toFixed(0)); }
+    else if(ind.rsi>70)  { side='SHORT'; score+=0.30; reasons.push('RSI sobrecomprado '+ind.rsi.toFixed(0)); }
+    else if(side==='LONG'  && ind.rsi<60){ score+=0.15; reasons.push('RSI neutro/alcista '+ind.rsi.toFixed(0)); }
+    else if(side==='SHORT' && ind.rsi>40){ score+=0.15; reasons.push('RSI neutro/bajista '+ind.rsi.toFixed(0)); }
+
+    if(ind.volRatio>1.8){ score+=0.20; reasons.push('vol '+ind.volRatio.toFixed(1)+'x'); }
+    else if(ind.volRatio>1.3){ score+=0.10; reasons.push('vol elevado'); }
+
+    if(ind.atrPct>0.05&&ind.atrPct<5){ score+=0.05; }
+    else if(ind.atrPct>=5){ score-=0.10; reasons.push('volatilidad alta'); }
+
+    score=Math.max(0,Math.min(1,score));
+    if(score<0.45||!side) return null;
+    return {side:side,score:score,reasons:reasons};
+  }
+
+  // ── Constructor de señal ──────────────────────────────────────────
+  function _buildSignal(pair,tf,ind,cls){
+    var entry=ind.last;
+    var atr=Math.max(entry*(ind.atrPct/100), entry*0.003); // mínimo ATR 0.3%
+    var sl=cls.side==='LONG'?+(entry-atr*1.5).toFixed(6):+(entry+atr*1.5).toFixed(6);
+    var tp=cls.side==='LONG'?+(entry+atr*3.0).toFixed(6):+(entry-atr*3.0).toFixed(6);
+    var risk=cls.score>0.75?'bajo':cls.score>0.55?'medio':'alto';
+    return {
+      id:_id(), asset:pair, timeframe:tf, side:cls.side,
+      entry:+entry.toFixed(6), stopLoss:sl, takeProfit:tp,
+      confidence:+cls.score.toFixed(2), risk:risk,
+      reason:cls.reasons.join(' + '),
+      indicators:{rsi:+ind.rsi.toFixed(1),mom10:+ind.mom10.toFixed(2),volRatio:+ind.volRatio.toFixed(2),atrPct:+ind.atrPct.toFixed(3),trendUp:ind.trendUp},
+      createdAt:Date.now(), status:'open', paperResult:null
+    };
+  }
+
+  // ── Persistencia ──────────────────────────────────────────────────
+  var _LS='a_trading_signals';
+  function _save(arr){ try{localStorage.setItem(_LS,JSON.stringify(arr.slice(-200)));}catch(e){} }
+  function _load(){ try{var r=JSON.parse(localStorage.getItem(_LS)||'[]');return Array.isArray(r)?r:[];}catch(e){return [];} }
+
+  // ── Formato de señal ──────────────────────────────────────────────
+  function _fmt(s){
+    var icon=s.side==='LONG'?'▲':'▼';
+    return [
+      icon+' '+s.asset+'/USDT · '+s.side+' · '+s.timeframe+'  [conf:'+(s.confidence*100).toFixed(0)+'% · riesgo:'+s.risk+']',
+      'Entrada:      $'+_fPrice(s.entry),
+      'Stop Loss:    $'+_fPrice(s.stopLoss),
+      'Take Profit:  $'+_fPrice(s.takeProfit),
+      'Razón:        '+s.reason,
+      'ID: '+s.id+'  ·  Estado: '+s.status+(s.paperResult?' · '+s.paperResult.toUpperCase():'')
+    ].join('\n');
+  }
+
+  // ── Notificaciones ────────────────────────────────────────────────
+  function _notify(s){
+    var icon=s.side==='LONG'?'▲':'▼';
+    var msg=icon+' '+s.asset+' '+s.side+' — conf:'+(s.confidence*100).toFixed(0)+'%  riesgo:'+s.risk;
+    try{ if(typeof toast==='function') toast(msg); }catch(e){}
+    try{ var sf=window.sig; if(typeof sf==='function') sf('[◈] SEÑAL: '+msg,'rgba(0,196,140,.6)'); }catch(e){}
+    try{ if(typeof proactiveNotify==='function') proactiveNotify('AURA Trading: '+msg); }catch(e){}
+    try{
+      if(window.AuraMeta) window.AuraMeta.observe({
+        events:['trading:signal:'+s.side+':'+s.asset+':'+s.timeframe],
+        performance:{confidence:s.confidence}
+      });
+    }catch(e){}
+  }
+
+  // ── window.AuraTrading ────────────────────────────────────────────
+  window.AuraTrading = {
+    _installed:true, VERSION:'v1.0',
+    signals: _load(),
+    _mon: {active:false, timer:null, pairs:['BTC','ETH','SOL'], ms:300000, _last:{}},
+
+    // Análisis real: klines → indicadores → score → señal o null
+    analyze: async function(pair, tf){
+      pair=(pair||'BTC').toUpperCase().replace(/USDT$/i,'');
+      var valid={'1m':1,'3m':1,'5m':1,'15m':1,'30m':1,'1h':1,'2h':1,'4h':1,'1d':1};
+      if(!valid[tf]) tf='15m';
+      try{
+        var cc=await _fetchKlines(pair,tf);
+        var ind=_indicators(cc); if(!ind) return null;
+        var cls=_classify(ind);  if(!cls) return null;
+        return _buildSignal(pair,tf,ind,cls);
+      }catch(e){ console.warn('[AuraTrading] analyze ('+pair+' '+tf+'):',e.message); return null; }
+    },
+
+    addSignal: function(s){ if(!s) return null; this.signals.push(s); _save(this.signals); _notify(s); return s; },
+
+    getSignals: function(f){
+      if(f==='open')   return this.signals.filter(function(s){return s.status==='open';});
+      if(f==='closed') return this.signals.filter(function(s){return s.status==='closed';});
+      return this.signals.slice();
+    },
+
+    closeSignal: function(id, exitPx, result){
+      var s=this.signals.find(function(x){return x.id===id;});
+      if(!s) return {ok:false,reason:'señal no encontrada: '+id};
+      s.status='closed'; s.closedAt=Date.now(); s.exitPrice=exitPx||null; s.paperResult=result||'ignored';
+      if(exitPx&&s.entry){ var pct=(exitPx-s.entry)/s.entry*100; s.pnlPct=+(s.side==='LONG'?pct:-pct).toFixed(3); }
+      _save(this.signals);
+      try{ if(window.AuraMeta) window.AuraMeta.observe({events:['trading:close:'+id+':'+result+':'+(s.pnlPct!=null?s.pnlPct+'%':'?')],performance:{}});}catch(e){}
+      return {ok:true,sig:s};
+    },
+
+    format: _fmt,
+
+    startMonitor: function(pairs, ms){
+      if(this._mon.active) return 'Monitor ya activo';
+      if(pairs&&pairs.length) this._mon.pairs=pairs.map(function(p){return p.toUpperCase().replace(/USDT$/,'');});
+      if(ms&&ms>=60000) this._mon.ms=ms;
+      this._mon.active=true;
+      var self=this;
+      self._tick();
+      this._mon.timer=setInterval(function(){self._tick();},self._mon.ms);
+      try{ if(typeof toast==='function') toast('[◈] Monitor ON — '+self._mon.pairs.join(',')+' cada '+(self._mon.ms/60000|0)+'min'); }catch(e){}
+      return 'Monitor activo';
+    },
+
+    stopMonitor: function(){
+      if(this._mon.timer) clearInterval(this._mon.timer);
+      this._mon.timer=null; this._mon.active=false;
+      try{ if(typeof toast==='function') toast('[◈] Monitor OFF'); }catch(e){}
+      return 'Monitor detenido';
+    },
+
+    _tick: async function(){
+      var AT=window.AuraTrading;
+      for(var i=0;i<AT._mon.pairs.length;i++){
+        var pair=AT._mon.pairs[i];
+        try{
+          var s=await AT.analyze(pair,'15m'); if(!s) continue;
+          // Anti-spam: no duplicar señal abierta del mismo par+lado
+          if(AT.signals.some(function(x){return x.asset===pair&&x.status==='open'&&x.side===s.side;})) continue;
+          // Cooldown 30 min por par
+          if(AT._mon._last[pair]&&(Date.now()-AT._mon._last[pair])<1800000) continue;
+          AT._mon._last[pair]=Date.now();
+          AT.addSignal(s);
+          try{ if(typeof addMsg==='function') addMsg('aura','[◈] MONITOR — SEÑAL DETECTADA\n\n'+_fmt(s)); }catch(e){}
+        }catch(e){ console.warn('[AuraTrading] tick ('+pair+'):',e.message); }
+      }
+    },
+
+    metaInfo: function(){
+      var open=this.getSignals('open');
+      return open.length ? open.length+' señal(es): '+open.map(function(s){return s.asset+' '+s.side;}).join(', ') : null;
+    }
+  };
+
+  // ── Extensión de handleCmd ────────────────────────────────────────
+  (function(){
+    var _orig=window.handleCmd;
+    if(typeof _orig!=='function'||_orig.__tradingLayer) return;
+
+    window.handleCmd=function(cmd){
+      var parts=(cmd||'').trim().split(/\s+/);
+      var base=(parts[0]||'').slice(1).toLowerCase();
+      var sub=(parts[1]||'').toLowerCase();
+      var AT=window.AuraTrading;
+
+      // /signal [par] [tf]
+      if(base==='signal'){
+        var pair=(parts[1]||'BTC').toUpperCase().replace(/USDT$/i,'');
+        var tf=parts[2]||'15m';
+        try{ var sf=window.sig; if(typeof sf==='function') sf('[◈] Analizando '+pair+' '+tf+'...','rgba(0,196,140,.4)'); }catch(e){}
+        try{ if(typeof toast==='function') toast('Analizando '+pair+' '+tf+'...'); }catch(e){}
+        return AT.analyze(pair,tf).then(function(s){
+          if(!s){
+            try{ if(typeof addMsg==='function') addMsg('aura','[◈] '+pair+' '+tf+'\n\nSin señal — score < 0.45. Sin confluencia suficiente.\nPrueba otro timeframe o espera una estructura clara.'); }catch(e){}
+          }else{
+            AT.addSignal(s);
+            try{ if(typeof addMsg==='function') addMsg('aura','[◈] SEÑAL GENERADA\n\n'+AT.format(s)); }catch(e){}
+          }
+          return true;
+        }).catch(function(err){
+          try{ if(typeof addMsg==='function') addMsg('aura','[◈] Error analizando '+pair+': '+err.message); }catch(e){}
+          return true;
+        });
+      }
+
+      // /trading + subcomandos
+      if(base==='trading'){
+
+        if(sub==='monitor'){
+          var action=(parts[2]||'start').toLowerCase();
+          if(action==='stop'){
+            try{ if(typeof addMsg==='function') addMsg('aura','[◈] '+AT.stopMonitor()); }catch(e){}
+            return Promise.resolve(true);
+          }
+          var rawP=parts.slice(3).join(' ').split(/[,\s]+/).filter(Boolean);
+          AT.startMonitor(rawP.length?rawP:['BTC','ETH','SOL'],300000);
+          try{
+            if(typeof addMsg==='function') addMsg('aura',
+              '[◈] Monitor ON\n\nPares: '+AT._mon.pairs.join(', ')+'\nIntervalo: '+(AT._mon.ms/60000|0)+' min · Timeframe: 15m\n\nPrimera evaluación en curso...');
+          }catch(e){}
+          return Promise.resolve(true);
+        }
+
+        if(sub==='history'){
+          var lim=parseInt(parts[2],10)||10;
+          var hist=AT.signals.slice(-lim).reverse();
+          if(!hist.length){
+            try{ if(typeof addMsg==='function') addMsg('aura','[◈] Sin señales registradas.'); }catch(e){}
+          }else{
+            var hl=['[ [◈] HISTORIAL — últimas '+hist.length+' ]',''];
+            hist.forEach(function(s){
+              var icon=s.side==='LONG'?'▲':'▼';
+              var pnl=s.pnlPct!=null?' ('+(s.pnlPct>0?'+':'')+s.pnlPct+'%)':'';
+              var age=Math.round((Date.now()-s.createdAt)/60000);
+              hl.push(icon+' '+s.asset+' '+s.side+' '+s.timeframe+' — '+s.status+(s.paperResult?' · '+s.paperResult.toUpperCase()+pnl:'')+' — hace '+age+'min');
+              hl.push('  conf:'+(s.confidence*100).toFixed(0)+'% · riesgo:'+s.risk+' | '+s.reason);
+              hl.push('  entrada:$'+_fPrice(s.entry)+' · sl:$'+_fPrice(s.stopLoss)+' · tp:$'+_fPrice(s.takeProfit));
+              hl.push('  '+s.id); hl.push('');
+            });
+            try{ if(typeof addMsg==='function') addMsg('aura',hl.join('\n')); }catch(e){}
+          }
+          return Promise.resolve(true);
+        }
+
+        if(sub==='open'){
+          var open=AT.getSignals('open');
+          if(!open.length){
+            try{ if(typeof addMsg==='function') addMsg('aura','[◈] Sin señales abiertas.'); }catch(e){}
+          }else{
+            var ol=['[ [◈] SEÑALES ABIERTAS — '+open.length+' ]',''];
+            open.forEach(function(s){ ol.push(AT.format(s)); ol.push(''); });
+            try{ if(typeof addMsg==='function') addMsg('aura',ol.join('\n')); }catch(e){}
+          }
+          return Promise.resolve(true);
+        }
+
+        if(sub==='close'){
+          var sigId=parts[2]||'';
+          var exitPx=parseFloat(parts[3])||null;
+          var result2=(parts[4]||'ignored').toLowerCase();
+          if(!sigId){
+            try{ if(typeof addMsg==='function') addMsg('aura','Uso: /trading close [id] [precio_salida] [win|loss|ignored|expired]'); }catch(e){}
+            return Promise.resolve(true);
+          }
+          var cr=AT.closeSignal(sigId,exitPx,result2);
+          var crMsg=cr.ok
+            ?'[◈] Señal '+sigId+' cerrada — '+result2+(exitPx?' @ $'+exitPx:'')+(cr.sig&&cr.sig.pnlPct!=null?' ('+(cr.sig.pnlPct>0?'+':'')+cr.sig.pnlPct+'%)':'')
+            :'[◈] '+cr.reason;
+          try{ if(typeof addMsg==='function') addMsg('aura',crMsg); }catch(e){}
+          return Promise.resolve(true);
+        }
+
+        // /trading solo → status completo
+        if(!sub){
+          var AA=window.AuraAgenticity, td=AA&&AA._domains&&AA._domains['trading'];
+          var sl=[
+            '[ [◈] AURA TRADING '+AT.VERSION+' ]','',
+            'Modo:      NO-AGÉNTICO TOTAL — solo observación y señales',
+            'ep: '+(td?td.executionPermission.toFixed(2):'0.00')+' · sv:'+(td?td.supervisionRequired.toFixed(2):'1.00'),
+            'Monitor:   '+(AT._mon.active?'ON — '+AT._mon.pairs.join(',')+ ' · '+(AT._mon.ms/60000|0)+'min':'OFF'),
+            '',
+            'Señales:   total='+AT.signals.length+' · abiertas='+AT.getSignals('open').length+' · cerradas='+AT.getSignals('closed').length,
+            '',
+            'Fuente:    Binance klines REST OHLCV (sin auth, tiempo real)',
+            'Indicadores: SMA10/20 · RSI(14) · Momentum(10) · ATR(14) · Vol ratio',
+            '',
+            'Comandos:',
+            '  /signal [par] [tf]                → analizar  (ej: /signal ETH 1h)',
+            '  /trading monitor start [BTC,ETH]  → iniciar monitor periódico',
+            '  /trading monitor stop',
+            '  /trading history [N]               → últimas N señales',
+            '  /trading open                      → señales abiertas ahora',
+            '  /trading close [id] [px] [win|loss|ignored|expired]',
+            '',
+            '⚠ Fase 1 — SIN ejecución real. Supervisión total de JR.'
+          ];
+          try{ if(typeof addMsg==='function') addMsg('aura',sl.join('\n')); }catch(e){}
+          return Promise.resolve(true);
+        }
+      }
+
+      return _orig.apply(this,arguments);
+    };
+
+    window.handleCmd.__tradingLayer='trading-v1';
+    window._handleCmd=window.handleCmd;
+    console.log('[AuraTrading] handleCmd extendido — /signal, /trading monitor|history|open|close');
+  })();
+
+  console.log('[AuraTrading v1.0] instalado — Binance klines OHLCV + señales supervisadas + monitor');
 })();
 </script>
 
