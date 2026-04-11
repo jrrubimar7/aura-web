@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r23-oai-realtime"/>
-<meta name="aura-build" content="IndexASv5.5.4-r23-oai-realtime"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r23-oai-realtime</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r24-capability-propose"/>
+<meta name="aura-build" content="IndexASv5.5.4-r24-capability-propose"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r24-capability-propose</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r23-oai-realtime";var VERSION="vIndexASv5.5.4-r23-oai-realtime";</script>
+<script>var BUILD="IndexASv5.5.4-r24-capability-propose";var VERSION="vIndexASv5.5.4-r24-capability-propose";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -16253,10 +16253,13 @@ window.forceEnterAura = function(ev){
 
   // ─────────────────────────────────────────────────────────────────
   // _capabilityRouter — cierra el hueco entre conversación y runtime
-  // Si el usuario pregunta sobre auto-edición/supervisión/código propio
-  // y NO hay propuestas pendientes, responde con verdad operativa en
-  // lugar de dejar caer el mensaje al LLM (que responde con persona).
-  // Si sí hay propuesta pendiente, pasa al supervisor gate (ya funciona).
+  //
+  // Dos ramas según intención detectada:
+  //   INFORMATIVA  (pregunta sobre capacidad) → explainCurrentCapability()
+  //   ACCIONAL     (petición de cambio)       → AuraEvolution.propose()
+  //
+  // Solo dispara cuando NO hay propuesta pendiente.
+  // Con propuesta pendiente → pasa al supervisor gate (ya funciona).
   // ─────────────────────────────────────────────────────────────────
   (function _capabilityRouter(){
     var _orig = window.__auraProcessAuraInput;
@@ -16300,19 +16303,105 @@ window.forceEnterAura = function(ev){
       return CAP.some(function(p){ return p.test(t); });
     }
 
+    // ── Clasificación: ACCIONAL vs INFORMATIVA ──────────────────────
+    // ACCIONAL → imperativo / petición de cambio → generar propuesta
+    // INFORMATIVA → pregunta sobre capacidad     → explicar
+    var ACTION_PAT = [
+      // Imperativo español: verbo al inicio
+      /^(arregl|cambi|modific|implement|cre[ae]\b|quit|añad|agreg|mejor|actualiz|corrig|refactor|reescrib|integr|activ|desactiv|configur|ajust|arml|ponl|sacal)/i,
+      // "puedes + verbo de acción" (no interrogativa pura)
+      /pu[ea]des\s+(arreglar|cambiar|modificar|implementar|corregir|mejorar|actualizar|crear|quitar|añadir|integrar)\b/i,
+      // "quiero que / necesito que + verbo"
+      /quiero que\s+(arregles|cambies|modifiques|implementes|corrijas|mejores|actualices|crees|quites|añadas|integres)/i,
+      /necesit[ao]\s+(que\s+)?(arregl|cambi|modific|implement|corrij|mejor|actualic)/i,
+      // "auto-edítate", "evoluciónate", "auto-evoluciona"
+      /auto.?edít(ate|a)\b/i, /evoluci[oó]nate\b/i, /auto.?evoluciona\b/i,
+      // "haz el cambio", "aplica el patch/parche"
+      /h[aá]z(lo|la|me)?\s*(el\s+)?cambi/i,
+      /aplic(a|ar)\s*(el\s+)?(cambi|parche|patch)\b/i,
+      // English imperatives
+      /^(fix|change|modif|implement|creat|remov|add\s|improv|updat|correct|refactor|enabl|disabl|set\s)/i,
+    ];
+
+    var INFORM_PAT = [
+      /[¿?]/,                                     // cualquier signo de pregunta
+      /^(cómo|c[oó]mo)\b/i,                       // "cómo funciona..."
+      /^(qu[eé]|para\s+qu[eé])\b/i,               // "qué es...", "para qué..."
+      /^(cuéntame|explí[ck]ame|dime|háblame)\b/i, // verbos informativos
+      /tienes\s+(la\s+)?capacidad/i,              // "¿tienes capacidad de...?"
+      /^(eres\s+capaz|puedes\s+(ver|explicar|decirme|mostrarme|contarme))/i,
+    ];
+
+    function _isActionable(text){
+      var t = (text || '').trim();
+      // Preguntas explícitas → NUNCA accional
+      if(INFORM_PAT.some(function(p){ return p.test(t); })) return false;
+      return ACTION_PAT.some(function(p){ return p.test(t); });
+    }
+
     window.__auraProcessAuraInput = function(text, meta){
       try{
         if(_isCapabilityQuery(text)){
           var AE = window.AuraEvolution;
           // Solo intercepta cuando NO hay propuesta pendiente.
-          // Si hay propuesta, pasa al supervisor gate (que sí gestiona aprobaciones).
+          // Con propuesta pendiente pasa al supervisor gate.
           var hasPending = AE && typeof AE.getAwaitingReview === 'function' && AE.getAwaitingReview().length > 0;
           if(!hasPending){
-            var reply = AE && typeof AE.explainCurrentCapability === 'function'
-              ? AE.explainCurrentCapability()
-              : 'Tengo capacidad de auto-edición supervisada, pero ahora no hay ninguna propuesta activa. Primero genero una propuesta concreta, la dejo en staging y tú la apruebas en lenguaje natural.';
-            if(typeof window.addMsg === 'function') window.addMsg('aura', reply);
-            if(window.AuraMeta) window.AuraMeta.logDecision({ decision:'allow', reason:'capabilityRouter:no-pending', source:'capabilityRouter', ts:Date.now() });
+            if(_isActionable(text)){
+              // ── ACCIONAL → generar propuesta en staging ─────────────
+              var id = (AE && typeof AE.propose === 'function')
+                ? AE.propose({
+                    file:   'index.html',
+                    patch:  '// [AUTO-PROPOSE] Usuario solicita: "' + text.slice(0,120) + '"\n' +
+                            '// Patch pendiente de elaboración.\n' +
+                            '// Describe el cambio concreto para que Claude lo implemente.',
+                    reason: text.slice(0, 200),
+                    author: 'user'
+                  })
+                : null;
+              if(id !== null){
+                if(AE.notifyPendingProposal) AE.notifyPendingProposal(id);
+                if(window.AuraMeta) window.AuraMeta.logDecision({
+                  decision:'propose', reason:'capabilityRouter:actionable',
+                  source:'capabilityRouter', id:id, ts:Date.now()
+                });
+                var msg = [
+                  'He generado una propuesta de auto-edición.',
+                  '',
+                  'ID:       #' + id,
+                  'Archivo:  index.html',
+                  'Intención: "' + text.slice(0, 80) + '"',
+                  'Estado:   staging — pendiente de revisión',
+                  '',
+                  '¿La aplico?',
+                  '  adelante / sí / aprueba  → ejecutar',
+                  '  no / rechaza             → descartar',
+                  '  espera / hold            → mantener en staging',
+                  '  cambia X / revisa X      → ajustar antes de aplicar'
+                ].join('\n');
+                if(typeof window.addMsg === 'function') window.addMsg('aura', msg);
+              } else {
+                // propose bloqueado — fallback a explain con aviso
+                var fb = (AE && typeof AE.explainCurrentCapability === 'function')
+                  ? AE.explainCurrentCapability() + '\n\n⚠ No pude crear la propuesta (propose bloqueado). Comprueba /meta.'
+                  : 'Tengo capacidad de auto-edición supervisada. Dime qué quieres cambiar.';
+                if(typeof window.addMsg === 'function') window.addMsg('aura', fb);
+                if(window.AuraMeta) window.AuraMeta.logDecision({
+                  decision:'propose-blocked', reason:'capabilityRouter:propose-null',
+                  source:'capabilityRouter', ts:Date.now()
+                });
+              }
+            } else {
+              // ── INFORMATIVA → explicar capacidad, no proponer ───────
+              var reply = (AE && typeof AE.explainCurrentCapability === 'function')
+                ? AE.explainCurrentCapability()
+                : 'Tengo capacidad de auto-edición supervisada, pero ahora no hay ninguna propuesta activa. Primero genero una propuesta concreta, la dejo en staging y tú la apruebas en lenguaje natural.';
+              if(typeof window.addMsg === 'function') window.addMsg('aura', reply);
+              if(window.AuraMeta) window.AuraMeta.logDecision({
+                decision:'explain', reason:'capabilityRouter:informative',
+                source:'capabilityRouter', ts:Date.now()
+              });
+            }
             return Promise.resolve(true); // consumido — no llega al LLM
           }
         }
