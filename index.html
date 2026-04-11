@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r8-hotfix"/>
-<meta name="aura-build" content="IndexASv5.5.4-r8-hotfix"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r8-hotfix</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r9-hotfix"/>
+<meta name="aura-build" content="IndexASv5.5.4-r9-hotfix"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r9-hotfix</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r8-hotfix";var VERSION="vIndexASv5.5.4-r8-hotfix";</script>
+<script>var BUILD="IndexASv5.5.4-r9-hotfix";var VERSION="vIndexASv5.5.4-r9-hotfix";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -9316,8 +9316,8 @@ var VoiceManager = (function() {
     _micOwner = 'conv';
 
     r.lang            = 'es-ES';
-    r.continuous      = true;
-    r.interimResults  = true;
+    r.continuous      = false; // r9: false más compatible que true (iOS, Android Chrome algunas versiones)
+    r.interimResults  = true;  // mantener interim para barge-in y feedback visual
     r.maxAlternatives = 3;
 
     setState(ST.LISTENING);
@@ -9451,6 +9451,12 @@ var VoiceManager = (function() {
       if(token!==_token) return;
       clearTimeout(_silTimer);
       _micRec=null; _micOwner=null;
+      // r9: fallback - si no hubo resultados finales pero sí interim, usar interim
+      if(!_accum && _interimBuf && _interimBuf.trim().length >= 2){
+        _accum = _interimBuf.trim();
+        _finalBuf = _accum;
+        console.log('[VM][conv] onend: usando _interimBuf como fallback');
+      }
       if(_accum&&_accum.length>=2){
         var msSince=_lastSpeechTs>0?(Date.now()-_lastSpeechTs):Infinity;
         if(msSince<600){
