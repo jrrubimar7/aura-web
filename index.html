@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"/>
 <meta name="theme-color" content="#00050f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r24d-user-bubble"/>
-<meta name="aura-build" content="IndexASv5.5.4-r24d-user-bubble"/>
-<title>AURA ∞.Ω · build IndexASv5.5.4-r24d-user-bubble</title>
+<link rel="manifest" href="manifest.json?v=IndexASv5.5.4-r25-describe-proposal"/>
+<meta name="aura-build" content="IndexASv5.5.4-r25-describe-proposal"/>
+<title>AURA ∞.Ω · build IndexASv5.5.4-r25-describe-proposal</title>
 <!-- BUILD y VERSION en head — disponibles antes que cualquier script de body -->
-<script>var BUILD="IndexASv5.5.4-r24d-user-bubble";var VERSION="vIndexASv5.5.4-r24d-user-bubble";</script>
+<script>var BUILD="IndexASv5.5.4-r25-describe-proposal";var VERSION="vIndexASv5.5.4-r25-describe-proposal";</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.3/mammoth.browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -16208,6 +16208,141 @@ window.forceEnterAura = function(ev){
       return lines.join('\n');
     };
 
+    // ── describeProposal: resumen estructurado, sin LLM ─────────────
+    // Fuente única de presentación de propuestas. Toda propuesta pasa aquí
+    // antes de mostrarse en el chat. Detecta módulo, alcance, riesgo y
+    // estado del patch (placeholder vs diff real). Determinista, offline.
+    AE.describeProposal = function(proposal){
+      if(!proposal) return '[Error: propuesta no encontrada]';
+
+      var reason = String(proposal.reason || '').trim();
+      var patch  = String(proposal.patch  || '').trim();
+      var file   = proposal.file   || 'index.html';
+      var id     = proposal.id;
+      var ts     = proposal.ts
+        ? new Date(proposal.ts).toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'})
+        : '?';
+
+      // ¿Patch es placeholder?
+      var isPlaceholder = !patch
+        || patch.indexOf('[AUTO-PROPOSE]') !== -1
+        || patch.indexOf('Patch pendiente') !== -1;
+
+      // ── Detección de módulo AURA afectado ─────────────────────────
+      var MODULES = [
+        { re: /voz|micr[oó]fono|\bmic\b|\baudio\b|tts|stt|whisper|openai.?voice|realtime|VoiceManager|startVoice/i,
+          label: 'Sistema de voz',
+          scope: 'VoiceManager, startVoice, AuraOAIVoice, AuraRealtime\n  → bloques aura-oai-voice-v1 / aura-oai-realtime-v1',
+          noTouch: 'trading, pipeline LLM, memoria, supervisor, agenticity, UI' },
+        { re: /trading|señal|binance|klines|mercado|\bcripto\b|\bcrypto\b/i,
+          label: 'Trading',
+          scope: 'AuraTrading, señales, monitor\n  → bloque aura-trading-v1',
+          noTouch: 'voz, pipeline LLM, memoria, supervisor, UI' },
+        { re: /memoria|memory|perfil|profile|contexto\s+conversacional/i,
+          label: 'Memoria / Perfil',
+          scope: 'AuraMemory, perfil de usuario\n  → bloque aura-memory-v1',
+          noTouch: 'voz, trading, pipeline LLM, supervisor' },
+        { re: /supervisor|evolv|auto.?edic|staging|capability|propuesta/i,
+          label: 'Auto-edición / Supervisor',
+          scope: 'AuraEvolution, AuraSupervisor, capabilityRouter\n  → bloque aura-infinibit-v1',
+          noTouch: 'voz, trading, UI, pipeline LLM' },
+        { re: /pipeline|window\.send|\bapiCall\b|\bllm\b|groq|claude|gemini|openrouter|proveedor/i,
+          label: 'Pipeline LLM',
+          scope: 'window.send, apiCall, proveedores de API\n  → bloque aura-pipeline-v12',
+          noTouch: 'voz, trading, memoria, UI' },
+        { re: /agenticity|agencia|autonom[ií]a|campo\s+graduado|dominio/i,
+          label: 'Agenticity',
+          scope: 'AuraAgenticity, dominios, campo graduado\n  → bloque aura-infinibit-v1',
+          noTouch: 'voz, trading, UI, pipeline LLM' },
+        { re: /ui|interfaz|estilo|css|color|bot[oó]n|men[uú]|drawer|panel|splash/i,
+          label: 'Interfaz de usuario',
+          scope: 'CSS inline, HTML, componentes UI',
+          noTouch: 'runtime AURA, voz, pipeline LLM, trading' },
+        { re: /service.?worker|sw\.js|cach[eé]|precach/i,
+          label: 'Service Worker / Caché',
+          scope: 'sw.js, estrategia de caché',
+          noTouch: 'runtime AURA, conversación, voz' },
+      ];
+
+      var detected = null;
+      for(var i=0; i<MODULES.length; i++){
+        if(MODULES[i].re.test(reason)){ detected = MODULES[i]; break; }
+      }
+
+      var scopeLabel    = detected ? detected.label   : 'Área no determinada';
+      var scopeDetail   = detected ? detected.scope   : 'Requiere revisión del diff para determinar alcance exacto';
+      var noTouchDetail = detected ? detected.noTouch : 'No determinado sin diff concreto';
+
+      // ── Evaluación de riesgo ─────────────────────────────────────
+      var risk = 'Bajo';
+      var riskNote = '';
+      if(/freeze|kernel|certificaci[oó]n|congelar/i.test(reason)){
+        risk = 'Alto'; riskNote = 'puede afectar funciones congeladas por kernel-freeze';
+      } else if(/pipeline|window\.send|\bapiCall\b/i.test(reason)){
+        risk = 'Alto'; riskNote = 'pipeline principal de mensajes';
+      } else if(/voz|audio|VoiceManager|startVoice/i.test(reason)){
+        risk = 'Medio'; riskNote = 'módulo de voz activo en producción';
+      } else if(/index\.html|monolito|bloque\s+script/i.test(reason)){
+        risk = 'Medio'; riskNote = 'monolito principal (~17 000 líneas)';
+      }
+
+      // ── Qué haría ────────────────────────────────────────────────
+      var whatItWouldDo = isPlaceholder
+        ? '⚠ Patch actual: placeholder — diff semántico pendiente de elaboración.\n' +
+          '  El cambio concreto debe especificarse y revisarse antes de aplicar.'
+        : patch.replace(/^\/\/\s*/gm, '').slice(0, 280);
+
+      // ── Rollback ─────────────────────────────────────────────────
+      var rollback = isPlaceholder
+        ? 'Sí — sin diff real aplicado aún, reversible via git'
+        : 'Sí, reversible via git (branch main)';
+      if(/freeze|kernel/i.test(reason)) rollback = 'Parcial — revisar con cuidado antes de aplicar';
+
+      // ── Construir mensaje ─────────────────────────────────────────
+      var L = [];
+      L.push('He generado una propuesta de auto-edición.');
+      L.push('');
+      L.push('ID:      #' + id);
+      L.push('Archivo: ' + file);
+      L.push('Hora:    ' + ts);
+      L.push('');
+      L.push('── Resumen ──────────────────────────────');
+      L.push(reason.slice(0, 120) || 'No especificado');
+      L.push('');
+      L.push('── Motivo ───────────────────────────────');
+      L.push('Intención detectada en el mensaje del usuario.');
+      L.push(isPlaceholder
+        ? '⚠ Patch placeholder: el diff concreto debe elaborarse antes de aplicar.'
+        : 'Patch definido. Revisar diff antes de aprobar.');
+      L.push('');
+      L.push('── Alcance ──────────────────────────────');
+      L.push('[' + scopeLabel + ']');
+      L.push(scopeDetail);
+      L.push('');
+      L.push('── Qué haría ────────────────────────────');
+      L.push(whatItWouldDo);
+      L.push('');
+      L.push('── Qué NO tocaría ───────────────────────');
+      L.push(noTouchDetail);
+      L.push('');
+      L.push('── Riesgo ───────────────────────────────');
+      L.push(risk + (riskNote ? ' — ' + riskNote : ''));
+      L.push('');
+      L.push('── Rollback ─────────────────────────────');
+      L.push(rollback);
+      L.push('');
+      L.push('── Estado ───────────────────────────────');
+      L.push('Staging — pendiente de revisión.');
+      L.push('');
+      L.push('── Siguiente paso ───────────────────────');
+      L.push('  adelante / sí / aprueba  → aplicar');
+      L.push('  no / rechaza             → descartar');
+      L.push('  espera / hold            → mantener en staging');
+      L.push('  cambia X / revisa X      → ajustar antes de aplicar');
+
+      return L.join('\n');
+    };
+
     console.log('[AuraSupervisor] _evolveReview instalado en AuraEvolution');
   })();
 
@@ -16398,20 +16533,13 @@ window.forceEnterAura = function(ev){
                   decision:'propose', reason:'capabilityRouter:actionable',
                   source:'capabilityRouter', id:id, ts:Date.now()
                 });
-                var msg = [
-                  'He generado una propuesta de auto-edición.',
-                  '',
-                  'ID:       #' + id,
-                  'Archivo:  index.html',
-                  'Intención: "' + text.slice(0, 80) + '"',
-                  'Estado:   staging — pendiente de revisión',
-                  '',
-                  '¿La aplico?',
-                  '  adelante / sí / aprueba  → ejecutar',
-                  '  no / rechaza             → descartar',
-                  '  espera / hold            → mantener en staging',
-                  '  cambia X / revisa X      → ajustar antes de aplicar'
-                ].join('\n');
+                // Recuperar objeto propuesta para describeProposal
+                var proposalObj = null;
+                if(AE._proposals) proposalObj = AE._proposals.find(function(p){ return p.id===id; }) || null;
+                if(!proposalObj && AE.list) proposalObj = AE.list().find(function(p){ return p.id===id; }) || null;
+                var msg = (AE && typeof AE.describeProposal === 'function' && proposalObj)
+                  ? AE.describeProposal(proposalObj)
+                  : 'He generado propuesta #'+id+' en staging. Responde "adelante" para aplicarla.';
                 if(typeof window.addMsg === 'function') window.addMsg('aura', msg);
               } else {
                 // propose bloqueado — fallback a explain con aviso
